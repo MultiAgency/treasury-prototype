@@ -7,11 +7,7 @@ FROM node:24.22.0-slim
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-# Images are built only from a release candidate: a development SDK link stops the build here.
-COPY scripts/release-mode.mjs ./scripts/release-mode.mjs
-RUN node scripts/release-mode.mjs
-# The pinned Proto contract tarball (sha256 beside it) is a lockfile dependency.
-COPY vendor ./vendor
+# Legacy owner-contract consumers use the exact published SDK 0.4.0 pin.
 RUN pnpm install --frozen-lockfile
 COPY tsconfig.json ./
 COPY src ./src

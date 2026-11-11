@@ -77,9 +77,8 @@ pnpm review:treasury       # Isolated UI review; retain screenshots, traces and 
 pnpm evidence:check
 ```
 
-The web app builds against Proto's published owner contract, `@multiagency/sdk`, not
-the copied backend router. The contract is vendored as a tarball in `vendor/`, with its sha256 and
-provenance.
+The web app builds against the published owner contract, `@multiagency/sdk`, pinned to registry version
+`0.4.0`, rather than the copied backend router. The legacy contract and app client share this portable pin.
 - **Calls:** every call goes through its `ownerClient`, which validates answers against the published
   output schemas and never retries.
 - **Recovery:** the client's typed failure kinds decide what the UI does. A lost or unverifiable
@@ -87,7 +86,7 @@ provenance.
   the observations.
 - **Manifest:** the default build ships `contract.json` (P2 owner-app manifest v1), naming the
   platform capabilities it needs.
-- **`pnpm check:frontend`** checks the contract pin and the build's actual module graph. That graph
+- **`pnpm check:frontend`** checks the build's actual module graph. That graph
   must contain no shared Payables or Portfolio module and no file from `src/`. The check also
   type-checks the graph against only the declared procedures.
 - **Browser fixtures** pass through the same published schemas and oRPC's encoder. Runtime compatibility grants no
@@ -128,6 +127,12 @@ externally chosen swaps and separately delegated plan/sweep execution for establ
 wallet owners; it is not deployed. A [Treasury skill](skills/treasury/SKILL.md) packages the workflow
 and client helper; its prepare/execute/evidence/revoke flow is tested against an offline simulated provider.
 DAO machine delegation is refused until a verified DAO approval mechanism exists.
+
+The **Treasury app** (`app/`, `pnpm app`) is a local candidate on the platform's `/apps/v1`.
+The owner signs in on the app host, connects an agent under explicit consent, issues read/propose tokens,
+and signs the platform's exact proposal terms before executing. The separate `proposals.html` entry
+serves that flow. App requests and token hashes live under private `APP_STATE` (default `.app/`);
+preserve them and the durable `decision-attempts/` claims across restarts and rollback. An unresolved owner decision remains poll-only; a `proposed` read cannot authorize another signature. This app starts no executor and has no hosted acceptance.
 
 ## Not done yet
 

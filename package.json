@@ -2,7 +2,7 @@
   "name": "agentic-treasury",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@12.14.0",
+  "packageManager": "pnpm@12.16.1",
   "engines": {
     "node": ">=24"
   },
@@ -29,7 +29,7 @@
     "demo": "pnpm build:web && pnpm server",
     "test": "node scripts/test.mjs offline",
     "test:live": "node scripts/test.mjs live",
-    "test:browser": "pnpm build:web && node test/browser/run.cjs treasury-prototype.cjs treasury-creation.cjs treasury-scope.cjs treasury-demo.cjs treasury-accessibility.cjs treasury-account.cjs treasury-run.cjs",
+    "test:browser": "pnpm build:web && node test/browser/run.cjs treasury-prototype.cjs treasury-creation.cjs treasury-scope.cjs treasury-demo.cjs treasury-accessibility.cjs treasury-account.cjs treasury-run.cjs treasury-proposals.cjs",
     "test:e2e": "node test/e2e/run.mjs",
     "verify": "pnpm typecheck && pnpm test && pnpm check:frontend && pnpm test:browser:legacy && pnpm test:browser && pnpm test:e2e && pnpm evidence:check",
     "test:e2e:explore": "node test/e2e/run.mjs --explore",
@@ -37,7 +37,8 @@
     "verify:candidate": "node test/e2e/candidate.mjs",
     "legacy:invoices": "tsx --env-file-if-exists=.env src/invoices-server.ts",
     "test:browser:legacy": "node scripts/test-legacy-browser.mjs",
-    "review:treasury": "node scripts/review-treasury.mjs"
+    "review:treasury": "node scripts/review-treasury.mjs",
+    "app": "tsx --env-file-if-exists=.env app/main.ts"
   },
   "dependencies": {
     "@ag-ui/core": "1.0.2",
@@ -67,7 +68,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@babel/parser": "^8.0.7",
-    "@multiagency/sdk": "link:/Users/jlwaugh/agencies/dao/proto/packages/sdk",
+    "@multiagency/sdk": "0.4.0",
     "@playwright/test": "1.64.1",
     "@rsbuild/core": "^2.2.12",
     "@rsbuild/plugin-react": "^2.1.1",

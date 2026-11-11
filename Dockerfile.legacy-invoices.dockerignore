@@ -29,3 +29,4 @@ test
 .test-artifacts/
 .impeccable/
 .codex/
+.app/

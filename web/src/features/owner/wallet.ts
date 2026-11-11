@@ -129,6 +129,19 @@ export async function signChallenge({ message, recipient, nonce }: { message: st
   return { accountId: signed.accountId, publicKey: signed.publicKey, signature: signed.signature, nonce, callbackUrls };
 }
 
+/**
+ * Signs a text another server built (NEP-413) with the signed-in member's wallet, connecting first: a Treasury proposal's
+ * exact approve or reject text, for the platform's host. The text is passed through unchanged.
+ */
+export async function signText({ message, recipient, nonce, account }: { message: string; recipient: string; nonce: Uint8Array; account: string }) {
+  if ((await member.connector.getConnectedWallet().catch(() => null))?.accounts.length !== 1) await member.connect();
+  const { wallet, accounts } = await member.connector.getConnectedWallet();
+  // A wallet switched to another account after sign-in would sign with a key the platform refuses: say so first.
+  if (accounts[0]?.accountId !== account) throw new Error(`Your wallet is on ${accounts[0]?.accountId ?? "no account"}; switch it to ${account}, the signed-in owner, and sign again. Nothing was signed.`);
+  const signed = await wallet.signMessage({ message, recipient, nonce });
+  return { publicKey: signed.publicKey, signature: signed.signature };
+}
+
 export const signOutMember = () => member.disconnect();
 
 /** Sends a transaction from the signed-in member's own wallet, such as a DAO proposal they file. */

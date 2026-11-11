@@ -12,5 +12,5 @@
     "noEmit": true,
     "allowJs": true
   },
-  "include": ["src/**/*.ts", "src/invoice-browser.js", "test/**/*.ts"]
+  "include": ["app/**/*.ts", "shared/**/*.ts", "src/**/*.ts", "src/invoice-browser.js", "test/**/*.ts"]
 }

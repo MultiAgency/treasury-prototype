@@ -37,15 +37,13 @@ test("dashboard Dockerfile copies every source needed for its web build", { time
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("every image refuses a development SDK link and copies local tarball dependencies before installing", () => {
+
+test("images install @multiagency/sdk from the registry at an exact version, with no working-tree link or extra build context", () => {
   const root = fileURLToPath(new URL("../", import.meta.url));
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  const local = Object.values({ ...manifest.dependencies, ...manifest.devDependencies } as Record<string, string>)
-    .flatMap(spec => spec.startsWith("file:") ? [spec.slice("file:".length).split("/")[0]!] : []);
-  for (const name of ["Dockerfile", "Dockerfile.dashboard", "Dockerfile.legacy-invoices"]) {
-    const [beforeInstall] = readFileSync(join(root, name), "utf8").split(/^RUN pnpm install/m);
-    assert.match(beforeInstall!, /^RUN node scripts\/release-mode\.mjs$/m, `${name} must refuse a development link before pnpm install`);
-    const copied = beforeInstall!.split("\n").filter(line => line.startsWith("COPY ")).flatMap(line => line.slice(5).trim().split(/\s+/).slice(0, -1));
-    for (const directory of local) assert.ok(copied.includes(directory), `${name} must copy ${directory} before pnpm install`);
-  }
+  const specs = { ...manifest.dependencies, ...manifest.devDependencies } as Record<string, string>;
+  assert.match(specs["@multiagency/sdk"] ?? "", /^\d+\.\d+\.\d+$/, "pin @multiagency/sdk to one published version");
+  for (const [name, spec] of Object.entries(specs)) assert.ok(!/^(link|file|portal):/.test(spec), `${name} must not be a working-tree dependency`);
+  for (const name of ["Dockerfile", "Dockerfile.dashboard", "Dockerfile.legacy-invoices"])
+    assert.doesNotMatch(readFileSync(join(root, name), "utf8"), /^COPY --from=/m, `${name} must build from this repository alone`);
 });

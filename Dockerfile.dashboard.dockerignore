@@ -31,3 +31,4 @@ web/node_modules
 .test-artifacts/
 .impeccable/
 .codex/
+.app/

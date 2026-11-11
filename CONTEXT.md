@@ -96,6 +96,36 @@ New storage-version-2 records bind the agent ID; earlier experimental records re
 revocable but cannot authenticate. No conversion of money state is needed. This is offline-tested
 candidate behavior, not deployed.
 
+**Treasury app (candidate)**:
+Treasury acting as an app on the platform's `/apps/v1`, under the owner's signed consent (`read` + `treasury`
+by default; `treasury-execute` only by the owner's explicit choice). Outside agents propose swaps through it, the owner
+signs each proposal's exact terms in their wallet, and the owner executes it. Its relay (`app/treasury-app.ts`) records
+each request before the platform sees it, resends only the identical request after a lost answer, relays only the
+platform's exact approval text, and reads a lost execution back instead of retrying. Exit codes: 0 ok, 2 nothing sent,
+3 unknown, 4 partial. It decides nothing about money; the platform enforces consent, terms, policy, grant and strategy.
+Its own server (`app/server.ts`, `pnpm app`) signs the owner in with their wallet on the app's host, under its own
+session cookie, because the platform host has no owner sign-in; it holds no money state and starts no executor.
+The owner issues outside agents **agent tokens** (`tat_…`, `app/runtime-tokens.ts`): `read` and/or `propose`, bound
+to this host, one Organization, one agent, its provider agent ID and the issuing owner, expiring in 60 s to 24 h and
+revocable by that owner, stored only as hashes under `.app/tokens/`. No token executes anything. Every agent call
+re-reads the agent's owner, provider ID and the app's live consent from the platform, and refuses if any changed or
+the platform doesn't answer. The owner **connects** an agent in the app (`/app/connect`): the app builds the
+consent text with the SDK's `consentMessage` (`read` + `treasury`; `treasury-execute` only when the owner ticks it;
+1 to 90 days, default 30) for the platform's host, and submits only a text it prepared for that owner, within ten
+minutes; with no answer, the same signed body can be sent again. The signed-in owner reads each proposal with the platform's exact approve and reject
+texts and its signing host as the NEP-413 recipient (`/app/proposals`), relays the wallet's signature over one of them,
+and presses Execute: one attempt, a lost answer read back. The page for this is web/'s second entry, `proposals.html`
+(`web/src/proposals/`, its own root without the gateway's Shell), served at the app's `/`: it shows each swap and the
+platform's text verbatim, has the wallet sign exactly that text for the platform's host, and asks for a confirmation
+before Execute. After an execution with no answer, or one that answers unknown, it offers no Execute while the proposal
+still reads `approved`: the platform re-quotes before it claims, so that state proves nothing. Its Agent tokens card
+issues and revokes the outside agents' tokens, showing each secret once. Outside agents call the app runtime with those tokens. This is offline-tested candidate code;
+no app deployment or hosted acceptance is established.
+
+Owner decision relays keep durable `decision-attempts/` records below `APP_STATE` as soon as a decision attempt is admitted, before its platform reads, approval or rejection. An unanswered decision, an in-flight relay, or a torn record remains poll-only across app and browser restarts. A `proposed` read does not prove an earlier decision stopped, and never releases a signing hold. Only a definitive, typed refusal can archive that attempt and permit another explicit signature; unknown replies, plain HTTP errors and successful decisions keep the claim. Preserve active claims and refusal archives across backup and rollback.
+
+A lost definitive-refusal reply is not recovered by a generic unheld read. Without a receipt bound to the exact attempted decision, the browser remains poll-only and requires manual review of retained attempt evidence; clearing local storage or deleting a claim is not a recovery procedure.
+
 **Portfolio**:
 The historical product-facing label for the Treasury area in the shared workspace.
 The standalone product uses **Treasury** in its default interface.
