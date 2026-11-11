@@ -53,5 +53,5 @@ try {
 } catch { refuse("The app source, proposals page or a referenced static asset is missing or unreadable."); }
 JS
 
-mkdir -p "$APP_STATE"
+# The app creates APP_STATE and syncs each newly created parent before it can relay an order.
 exec node --import tsx app/main.ts

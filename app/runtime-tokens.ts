@@ -1,9 +1,9 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { BadRequest } from "../shared/http.js";
-import { writeDurable } from "./durable.js";
+import { mkdirDurable, writeDurable } from "./durable.js";
 
 /**
  * Bearer tokens the owner issues for an outside agent (coordination/treasury-app-move.md, Answers 2): `read` and
@@ -52,7 +52,7 @@ export class RuntimeTokens {
     const checked = RuntimeIssue.safeParse(input);
     if (!checked.success) throw new BadRequest("Give organization, agent, a label, read and/or propose scopes, and a lifetime of 60 to 86400 seconds.");
     const parsed = checked.data;
-    mkdirSync(this.root, { recursive: true, mode: 0o700 });
+    mkdirDurable(this.root);
     if ((statSync(this.root).mode & 0o077) !== 0) throw new Error("The runtime token directory must be private");
     if (readdirSync(this.root).filter(name => name.endsWith(".json")).length >= MAX_TOKENS)
       throw new BadRequest("Token storage is full. Archive expired or revoked tokens before issuing more.");

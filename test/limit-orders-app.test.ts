@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import fs, { existsSync, fstatSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -101,6 +102,47 @@ function fixture(options: { loseCreate?: number; losePlace?: boolean; loseCancel
 }
 const appWith = (server: ReturnType<typeof fixture>, state = fresh()) => treasuryApp({ platform: HOST, credential: "tap_fixture", state, fetch: server.fetch });
 const signed = (message: string) => ({ message, nonce: Buffer.alloc(32).toString("base64"), publicKey: "ed25519:11111111111111111111111111111111", signature: "ed25519:fixture" });
+
+test("new nested order state directories are synced before a platform order call", async () => {
+  const parent = fresh(), stateParent = join(parent, "new-parent"), state = join(stateParent, "app"), server = fixture({ state });
+  const directories = ["order-requests", "order-attempts", "order-dao-votes", "order-dao-consents"];
+  const syncs: { parent: boolean; stateParent: boolean; state: boolean; orderDirectoriesExist: boolean }[] = [];
+  const sends: { path: string; parentSynced: boolean; stateParentSynced: boolean; orderDirectoriesSynced: boolean }[] = [];
+  const originalSync = fs.fsyncSync;
+  fs.fsyncSync = fd => {
+    const target = fstatSync(fd);
+    const same = (path: string) => {
+      const other = statSync(path);
+      return target.dev === other.dev && target.ino === other.ino;
+    };
+    syncs.push({ parent: same(parent), stateParent: existsSync(stateParent) && same(stateParent), state: existsSync(state) && same(state),
+      orderDirectoriesExist: directories.every(directory => existsSync(join(state, directory))) });
+    return originalSync(fd);
+  };
+  syncBuiltinESMExports();
+  try {
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      const path = new URL(new Request(input, init).url).pathname;
+      if (path.endsWith("/limitOrders/create") || path.endsWith("/limitOrders/place"))
+        sends.push({ path, parentSynced: syncs.some(entry => entry.parent), stateParentSynced: syncs.some(entry => entry.stateParent),
+          orderDirectoriesSynced: syncs.some(entry => entry.state && entry.orderDirectoriesExist) });
+      return server.fetch(input, init);
+    };
+    const app = treasuryApp({ platform: HOST, credential: "tap_fixture", state, fetch });
+    assert.ok((await app.orderCreate(ORG, AGENT, REQUEST)).ok);
+    assert.ok((await app.orderPlace(ORG, AGENT, ID)).ok);
+    assert.deepEqual(server.calls.filter(call => call.path === "create" || call.path === "place").map(call => call.path), ["create", "place"]);
+    assert.equal(sends.length, 2);
+    for (const send of sends) {
+      assert.equal(send.stateParentSynced, true, `the new APP_STATE entry is synced in its parent before ${send.path}`);
+      assert.equal(send.parentSynced, true, `the new APP_STATE parent entry is synced in its parent before ${send.path}`);
+      assert.equal(send.orderDirectoriesSynced, true, `APP_STATE is synced after creating all order claim directories before ${send.path}`);
+    }
+  } finally {
+    fs.fsyncSync = originalSync;
+    syncBuiltinESMExports();
+  }
+});
 
 test("order create persists exact terms before sending and lost replies retry the identical saved body", async () => {
   const state = fresh(), server = fixture({ loseCreate: 1, state }), app = appWith(server, state);

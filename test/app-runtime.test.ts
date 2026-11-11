@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import fs, { fstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { RuntimeTokens } from "../app/runtime-tokens.js";
 import { EXIT } from "../app/treasury-app.js";
 import { AGENT, appPlatform, HOST, ID, ORG, OWNER, USDC, WNEAR } from "./fixtures/app-platform.js";
 
@@ -12,6 +15,30 @@ const issue = (scopes: string[], account = OWNER, extra = {}) =>
 const run = (secret: string, command: string, body: unknown = {}, { org = ORG, agent = AGENT, headers = {} }: { org?: string; agent?: string; headers?: Record<string, string> } = {}) =>
   call(`/runtime/v1/o/${org}/a/${agent}/${command}`, { method: "POST", headers: { authorization: `Bearer ${secret}`, ...headers }, body });
 const proposal = { requestId: "req-1", legs: [{ from: USDC, to: WNEAR, amount: "1000000" }], expiresAt: "2026-11-05T00:00:00Z" };
+
+test("first token issue syncs the new token directory entry before returning its secret", () => {
+  const parent = mkdtempSync(join(tmpdir(), "treasury-token-durable-")), state = join(parent, "app");
+  mkdirSync(state, { mode: 0o700 });
+  let stateSynced = false, stateSyncedBeforeRecord = false;
+  const originalSync = fs.fsyncSync;
+  fs.fsyncSync = fd => {
+    const target = fstatSync(fd), app = statSync(state);
+    if (target.dev === app.dev && target.ino === app.ino) stateSynced = true;
+    if (target.isFile()) stateSyncedBeforeRecord = stateSynced;
+    return originalSync(fd);
+  };
+  syncBuiltinESMExports();
+  try {
+    const issued = new RuntimeTokens(join(state, "tokens")).issue(
+      { organization: ORG, agent: AGENT, label: "durable", scopes: ["read"], ttlSeconds: 3_600 },
+      { owner: OWNER, agentId: "agent-1", host: HOST });
+    assert.match(issued.secret, /^tat_/);
+    assert.equal(stateSyncedBeforeRecord, true, "APP_STATE must be synced before the first token record is written");
+  } finally {
+    fs.fsyncSync = originalSync;
+    syncBuiltinESMExports();
+  }
+});
 
 test("the owner issues a read+propose token; the agent reads and proposes, and the secret is stored only as a hash", async () => {
   const issued = await issue(["read", "propose"]);

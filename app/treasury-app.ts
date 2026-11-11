@@ -3,7 +3,7 @@ import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, rea
 import { join, resolve } from "node:path";
 import { appClient, appDaoConsentRequest, appDaoOrderRequest, parseConsentMessage, limitOrderCreateInput, limitOrderQuoteInput, limitOrderRef, limitOrderText, proposalCreateInput, proposalText, type AppBase, type AppConsentSubmission, type OwnerFailure, type LimitOrderView, type ProposalView } from "@multiagency/treasury-app-sdk";
 import type { z } from "zod";
-import { writeDurable } from "./durable.js";
+import { mkdirDurable, syncDirectory, writeDurable } from "./durable.js";
 
 /**
  * The Treasury app's relay to the platform's `/apps/v1` (coordination/treasury-app-move.md). It decides nothing about
@@ -60,6 +60,7 @@ export function treasuryApp({ platform, credential, state, fetch = globalThis.fe
   const bounded: typeof globalThis.fetch = (input, init = {}) =>
     fetch(input, { ...init, signal: init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
   const app = appClient({ base: platform, credential, fetch: bounded });
+  mkdirDurable(state);
   const requests = join(state, "requests");
   mkdirSync(requests, { recursive: true, mode: 0o700 });
 
@@ -67,7 +68,6 @@ export function treasuryApp({ platform, credential, state, fetch = globalThis.fe
   // archive a proven refusal; reads and restarts never erase attempts or infer safety from a proposed view.
   const decisions = join(state, "decision-attempts");
   mkdirSync(decisions, { recursive: true, mode: 0o700 });
-  const syncDirectory = (directory: string) => { const fd = openSync(directory, "r"); try { fsyncSync(fd); } finally { closeSync(fd); } };
   syncDirectory(state);
   const decisionOrigin = new URL(platform).origin;
   const decisionScope = (domain: "proposal" | "order", organization: string, agent: string, id: string) =>
@@ -123,6 +123,8 @@ export function treasuryApp({ platform, credential, state, fetch = globalThis.fe
 
   const orderRequests = join(state, "order-requests"), orderClaims = join(state, "order-attempts"), daoVotes = join(state, "order-dao-votes"), daoConsents = join(state, "order-dao-consents");
   for (const directory of [orderRequests, orderClaims, daoVotes, daoConsents]) mkdirSync(directory, { recursive: true, mode: 0o700 });
+  // Persist their entries too: syncing only a new claim file and its child directory cannot save the child's own name.
+  syncDirectory(state);
   const claimFile = (organization: string, agent: string, id: string, action: "place" | "cancel") =>
     join(orderClaims, `${action}-${requestFile(organization, agent, id)}`);
   // An exclusive file is also the inter-process claim. A torn file remains a claim: missing JSON never permits replay.

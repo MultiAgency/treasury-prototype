@@ -1,15 +1,15 @@
 # Treasury app limit-order consumer
 
-Status: local consumer integration only, using the frozen, unpublished SDK 0.5.8 handoff build. No live order, provider mutation, deployment or restart was performed. Offline and browser fixtures do not establish provider behavior.
+Status: local consumer integration only, using the frozen, unpublished SDK 0.5.8 handoff build. No live order, provider mutation, deployment or live-service restart was performed. Offline and browser fixtures do not establish provider behavior.
 
 ## Dependency and release boundary
 
-The order app imports `@multiagency/treasury-app-sdk`, pinned to the portable repository artifact `file:vendor/multiagency-sdk-0.5.8.tgz`. Its verified SHA-256 is `8559e5fb37a576ea1a99924d0bfc7223aee2e8965b8ea4a3b24cb1d8530def50`. This final source-frozen artifact replaces the earlier 0.5.8 consumer artifact. It remains unpublished. Its local release evidence does not establish a compatible deployed platform or provider.
+The order app imports `@multiagency/treasury-app-sdk`, pinned to the portable repository artifact `file:vendor/multiagency-sdk-0.5.8.tgz`. Its verified SHA-256 is `cd3f9736f1e729e9ca98edf38bd64819ecbf955114ab0420e40b5c00462ec14b`. This current source-frozen candidate replaces the earlier 0.5.8 consumer artifact. It remains unpublished. Its local release evidence does not establish a compatible deployed platform or provider.
 
 The tarball's `package/provenance.json` records:
 
-- Platform source commit [`8b2da58fdc72bdcbb50e667ac18f10db54a05066`](https://github.com/MultiAgency/platform/commit/8b2da58fdc72bdcbb50e667ac18f10db54a05066), associated with draft [MultiAgency/platform#78](https://github.com/MultiAgency/platform/pull/78).
-- Source snapshot digest `a575d2ea766269a9c1fad37ae2f315afe88a68065caff05c1406c270c1e34063`.
+- Platform source commit [`6f85117e6ec02b15250751adf98de5dc2b66664c`](https://github.com/MultiAgency/platform/commit/6f85117e6ec02b15250751adf98de5dc2b66664c), associated with [MultiAgency/platform#78](https://github.com/MultiAgency/platform/pull/78).
+- Source snapshot digest `5025c27324536ef1c0130b82c08fe2523c3ed5d07b7ffa92f22621940f563ea8`.
 - Empty `dirtyPaths` and `sourcesDirty`, with no overlay diff.
 
 The checksum was verified before use. The build-input regression pins the artifact checksum, checksum sidecar and embedded source provenance. These identify the tested consumer bytes; they do not establish a published package, a compatible deployed platform or live provider behavior.
@@ -24,9 +24,9 @@ Do not switch this artifact to a registry alias before publication and provenanc
 
 The candidate contract omits legacy `Client.treasury.setConfidential` and `Client.steward.propose`, and its policy actions include `limit_order`, absent from this checkout's legacy provider `Policy` type. The alias confines this task to the app consumer without editing the SDK checkout or altering those existing flows. The frozen candidate rejects exponent-form prices through normal schema validation; malformed input is refused before a platform call.
 
-## Final artifact contract comparison
+## Current candidate contract comparison
 
-Compared with the prior 0.5.8 consumer artifact, the limit-order contracts, app client, consent and capability contracts, and SDK Treasury app skill are byte-identical. The only SDK schema addition is optional `payment.repeats` information on an owner `approval_vote` preparation: either `{ checked: true, payouts: [{ correlationId, at, status }] }` or `{ checked: false }`. It reports matching earlier payouts without refusing the payment. The SDK app-server skill now asks consumers of that path to display this information beside the payment terms. This Treasury consumer does not use that payment preparation path, so its tested order behavior and existing regressions need no change.
+Compared with the immediately prior 0.5.8 consumer artifact from `8b2da58`, only the packed `CHANGES.md` and `provenance.json` changed; the other 99 packed files, including the limit-order contracts, app client, consent and capability contracts, and SDK Treasury app skill, are byte-identical. The earlier optional `payment.repeats` addition on an owner `approval_vote` preparation remains unchanged. This Treasury consumer does not use that payment preparation path. Its order behavior is rechecked against the current candidate.
 
 ## Consent and operation behavior
 
