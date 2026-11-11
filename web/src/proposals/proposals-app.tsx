@@ -1,4 +1,5 @@
-import { PROPOSAL_TOKENS, type ProposalView } from "@multiagency/sdk";
+import { LimitOrders } from "./limit-orders";
+import { PROPOSAL_TOKENS, type ProposalView } from "@multiagency/treasury-app-sdk";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { signChallenge, signText } from "../features/owner/wallet";
 import { Badge, Button, Card, ErrorBox, Loading, Note, type Tone } from "../shared/ui";
@@ -82,7 +83,7 @@ export function ProposalsApp() {
           </Card>
         ) : !where.organization || !where.agent ? <Choose />
         : selected ? <Review key={`${where.organization}:${where.agent}:${selected}`} where={where} id={selected} account={account} />
-        : <Connected where={where} account={account}><List where={where} /></Connected>}
+        : <><Connected where={where} account={account}><List where={where} /></Connected><LimitOrders where={where} account={account} /></>}
     </main>
   );
 }

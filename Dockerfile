@@ -1,13 +1,17 @@
 # Agentic Treasury gateway and isolated Treasury executors in one container.
 # Secrets come from the host environment and the volume, never from this image.
-FROM node:24.22.0-slim
+FROM node:24.22.2-slim
 
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-# Legacy owner-contract consumers use the exact published SDK 0.4.0 pin.
+# Verified local consumer SDK; replace its alias with a published exact pin before release.
+COPY vendor/multiagency-sdk-0.5.8.tgz ./vendor/multiagency-sdk-0.5.8.tgz
+COPY vendor/multiagency-sdk-0.5.8.tgz.sha256 ./vendor/multiagency-sdk-0.5.8.tgz.sha256
+RUN cd vendor && sha256sum --check multiagency-sdk-0.5.8.tgz.sha256
 RUN pnpm install --frozen-lockfile
 COPY tsconfig.json ./
+COPY shared ./shared
 COPY src ./src
 COPY web ./web
 # The focused build serves the Treasury skill at /skill.md.

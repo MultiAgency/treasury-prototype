@@ -146,6 +146,15 @@ export const signOutMember = () => member.disconnect();
 
 /** Sends a transaction from the signed-in member's own wallet, such as a DAO proposal they file. */
 export const sendAsMember = (transaction: Transaction) => member.send(transaction);
+/** Sends a DAO transaction only from the account signed in to this app, checked again at invocation. */
+export async function sendAsCurrentMember(transaction: Transaction, account: string) {
+  if ((await member.connector.getConnectedWallet().catch(() => null))?.accounts.length !== 1) await member.connect();
+  const { wallet, accounts } = await member.connector.getConnectedWallet();
+  if (accounts.length !== 1 || accounts[0]?.accountId !== account)
+    throw new Error(`Switch your wallet to ${account}, the signed-in member. Nothing was submitted.`);
+  return wallet.signAndSendTransaction({ signerId: account, ...transaction });
+}
+
 export const connect = () => owner.connect();
 export const disconnect = () => owner.disconnect();
 export const send = (transaction: Transaction) => owner.send(transaction);

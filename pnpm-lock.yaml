@@ -245,6 +245,9 @@ importers:
       '@multiagency/sdk':
         specifier: 0.4.0
         version: 0.4.0(zod@4.6.7)
+      '@multiagency/treasury-app-sdk':
+        specifier: file:vendor/multiagency-sdk-0.5.8.tgz
+        version: '@multiagency/sdk@file:vendor/multiagency-sdk-0.5.8.tgz(zod@4.6.7)'
       '@playwright/test':
         specifier: 1.64.1
         version: 1.64.1
@@ -712,6 +715,13 @@ packages:
 
   '@multiagency/sdk@0.4.0':
     resolution: {integrity: sha512-5Z90i0rukFw5OKhCYsrfd9a4CBNNYKi0z8M+GSYl7/s0SdmOmVbR7hBsYg709b9Tvimf5yms0RcbEaGLgCH3MQ==}
+    hasBin: true
+    peerDependencies:
+      zod: ^4.6.5
+
+  '@multiagency/sdk@file:vendor/multiagency-sdk-0.5.8.tgz':
+    resolution: {integrity: sha512-zqEuwbgUf9fy8cJyVHSkdFyIOPwElpVVN0ldc3UqYao5LRsLkPyQxoaC+x7xWas6i1cuxJgUC0y5ujbgMwf5tQ==, tarball: file:vendor/multiagency-sdk-0.5.8.tgz}
+    version: 0.5.8
     hasBin: true
     peerDependencies:
       zod: ^4.6.5
@@ -4005,6 +4015,12 @@ snapshots:
       - supports-color
 
   '@multiagency/sdk@0.4.0(zod@4.6.7)':
+    dependencies:
+      '@ag-ui/core': 1.0.3(zod@4.6.7)
+      '@orpc/contract': 2.0.0-beta.47
+      zod: 4.6.7
+
+  '@multiagency/sdk@file:vendor/multiagency-sdk-0.5.8.tgz(zod@4.6.7)':
     dependencies:
       '@ag-ui/core': 1.0.3(zod@4.6.7)
       '@orpc/contract': 2.0.0-beta.47

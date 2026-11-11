@@ -61,6 +61,7 @@ async function open(browser, root, { execute = { exit: 0, result: { ok: true, va
       tokens.push(token); return route.fulfill({ status: 201, json: { token, secret: `tat_${token.id}.${'S'.repeat(43)}` } });
     }
     if (p.startsWith('/app/tokens/') && request.method() === 'DELETE') { writes.push({ revoke: p.split('/').at(-1) }); tokens.forEach(t => { t.revoked = true; }); return route.fulfill({ json: { revoked: true } }); }
+    if (p === '/app/orders/access') return route.fulfill({ json: { capable: false, consented: false, owner: 'owner.near', signer: 'wallet', mayRead: false, mayPrepare: false, mayExecute: false, mayVote: false, mayConsent: false } });
     if (p === '/app/proposals') return route.fulfill({ json: { exit: 0, result: { ok: true, value: { proposals: [view(state)] } } } });
     if (p === `/app/proposals/${ID}`) {
       reads.push('get');

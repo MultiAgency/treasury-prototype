@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { appClient, proposalCreateInput, proposalText, type AppBase, type AppConsentSubmission, type OwnerFailure, type ProposalView } from "@multiagency/sdk";
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, lstatSync, writeSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { appClient, appDaoConsentRequest, appDaoOrderRequest, parseConsentMessage, limitOrderCreateInput, limitOrderQuoteInput, limitOrderRef, limitOrderText, proposalCreateInput, proposalText, type AppBase, type AppConsentSubmission, type OwnerFailure, type LimitOrderView, type ProposalView } from "@multiagency/treasury-app-sdk";
 import type { z } from "zod";
 import { writeDurable } from "./durable.js";
 
@@ -12,6 +12,9 @@ import { writeDurable } from "./durable.js";
  * never as a new request.
  */
 export type ProposalRequest = z.input<typeof proposalCreateInput>;
+export type LimitOrderRequest = z.input<typeof limitOrderCreateInput>;
+export type LimitOrderQuote = z.input<typeof limitOrderQuoteInput>;
+export type OrderAnswer = { ok: true; value: LimitOrderView } | OwnerFailure;
 /** The reads an outside agent may make through the app (consent scope `read`, or `treasury` for the strategy). */
 export type Read = "overview" | "activity" | "unresolved" | "strategy/get";
 export type Signed = { message: string; nonce: string; publicKey: string; signature: string };
@@ -46,6 +49,10 @@ export const requestFile = (organization: string, agent: string, requestId: stri
 
 /** How long one platform call may take before it counts as unanswered. */
 export const PLATFORM_TIMEOUT_MS = 60_000;
+
+// Coalesce explicit continuation requests across relay instances in this process. The platform's money lock and
+// durable submission proof remain authoritative across processes and restarts; this map never supplies that proof.
+const cancellationContinuations = new Map<string, Promise<OrderAnswer>>();
 
 export function treasuryApp({ platform, credential, state, fetch = globalThis.fetch, maxRequests = MAX_REQUESTS, timeoutMs = PLATFORM_TIMEOUT_MS }:
   { platform: AppBase; credential: string; state: string; fetch?: typeof globalThis.fetch; maxRequests?: number; timeoutMs?: number }) {
@@ -87,7 +94,7 @@ export function treasuryApp({ platform, credential, state, fetch = globalThis.fe
     try { refusedDecisions(domain, organization, agent, id); return false; } catch { return true; }
   }
   const decisionUnknown = (domain: "proposal" | "order", id: string, verdict: "approve" | "reject"): OwnerFailure =>
-    ({ ok: false, kind: "unknown", procedure: verdict === "approve" ? "proposals/approve" : "proposals/reject", identity: { id } });
+    ({ ok: false, kind: "unknown", procedure: `${domain === "proposal" ? "proposals" : "limitOrders"}/${verdict === "approve" ? "approve" : "reject"}`, identity: { id } });
   async function relayDecision<T extends { ok: boolean; kind?: string }>(domain: "proposal" | "order", organization: string, agent: string,
     id: string, verdict: "approve" | "reject", signed: Signed, send: () => Promise<T>): Promise<T | OwnerFailure> {
     const active = decisionPath(domain, organization, agent, id), attemptId = randomUUID();
@@ -114,8 +121,207 @@ export function treasuryApp({ platform, credential, state, fetch = globalThis.fe
     return !answer.ok && !provenRefusal(answer.kind) ? unknown : answer;
   }
 
+  const orderRequests = join(state, "order-requests"), orderClaims = join(state, "order-attempts"), daoVotes = join(state, "order-dao-votes"), daoConsents = join(state, "order-dao-consents");
+  for (const directory of [orderRequests, orderClaims, daoVotes, daoConsents]) mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const claimFile = (organization: string, agent: string, id: string, action: "place" | "cancel") =>
+    join(orderClaims, `${action}-${requestFile(organization, agent, id)}`);
+  // An exclusive file is also the inter-process claim. A torn file remains a claim: missing JSON never permits replay.
+  function exclusive(directory: string, file: string, record: unknown): boolean {
+    let fd: number;
+    try { fd = openSync(file, "wx", 0o600); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "EEXIST") return false; throw error; }
+    try { writeSync(fd, JSON.stringify(record)); fsyncSync(fd); } finally { closeSync(fd); }
+    const parent = openSync(directory, "r");
+    try { fsyncSync(parent); } finally { closeSync(parent); }
+    return true;
+  }
+  const uncertain = (answer: { ok: boolean; kind?: string }) => !answer.ok && (answer.kind === "unknown" || answer.kind === "unavailable");
+  const unknownOrder = (id: string, action: "place" | "cancel"): OwnerFailure =>
+    ({ ok: false, kind: "unknown", procedure: action === "place" ? "limitOrders/place" : "limitOrders/cancel", identity: { id } });
+  async function followOrder(organization: string, agent: string, id: string, action: "place" | "cancel"): Promise<OrderAnswer> {
+    const calls = app.agent(organization, agent);
+    // get follows the saved proposal; refresh obtains live fills/payouts. Neither can submit a replacement.
+    await calls.call("limitOrders/get", { id });
+    const latest = await calls.call("limitOrders/refresh", { id });
+    if (!latest.ok) return unknownOrder(id, action);
+    // A read made before the platform claimed placement, or before it recorded cancellation, is not a refusal.
+    if (action === "place" && ["proposed", "approved"].includes(latest.value.state)) return unknownOrder(id, action);
+    if (action === "cancel" && latest.value.cancelRequestedAt === null && !["completed", "payout_failed"].includes(latest.value.state))
+      return unknownOrder(id, action);
+    return latest;
+  }
+
+  const daoOrderRequest = (organization: string, agent: string, hash: string): z.output<typeof appDaoOrderRequest> | null => {
+    try {
+      const saved = appDaoOrderRequest.parse(JSON.parse(readFileSync(join(daoVotes, requestFile(organization, agent, hash)), "utf8")));
+      return saved.organization === organization && saved.agent === agent && saved.id === hash ? saved : null;
+    } catch { return null; }
+  };
+
+  const daoOrderConsentRequest = (organization: string, agent: string, hash: string): z.output<typeof appDaoConsentRequest> | null => {
+    try {
+      const saved = appDaoConsentRequest.parse(JSON.parse(readFileSync(join(daoConsents, requestFile(organization, agent, hash)), "utf8")));
+      return saved.organization === organization && saved.agent === agent && saved.id === hash ? saved : null;
+    } catch { return null; }
+  };
+
   return {
     decisionHeld,
+    daoOrderRequest,
+    daoOrderConsentRequest,
+    /** The SDK's authenticated app capabilities read grants no consent or provider order support. */
+    discovery: () => app.capabilities(),
+    /** File only canonical order consent. Its returned binding is durable before any member sees the transaction. */
+    async daoOrderConsentFile(message: string) {
+      const consent = parseConsentMessage(message);
+      if (!consent || JSON.stringify([...consent.scopes].sort()) !== JSON.stringify(["read", "treasury", "treasury-orders"]))
+        return local("invalid_consent", "Give the SDK's exact consent for read, treasury and treasury-orders.");
+      const filed = await app.daoConsents.file(message);
+      if (filed.ok) {
+        const request = filed.value.request;
+        if (request.organization !== consent.organization || request.agent !== consent.agent || request.agentId !== consent.agentId
+          || request.dao !== consent.owner || request.expiresAt !== Date.parse(consent.expiresAt)
+          || JSON.stringify([...request.scopes].sort()) !== JSON.stringify([...consent.scopes].sort()))
+          return local("dao_request_mismatch", "The platform answered different DAO consent terms. No transaction was offered.");
+        writeDurable(join(daoConsents, requestFile(request.organization, request.agent, request.id)), JSON.stringify(request));
+      }
+      return filed;
+    },
+    async daoOrderConsentState(organization: string, agent: string, hash: string) {
+      const saved = daoOrderConsentRequest(organization, agent, hash);
+      if (!saved) return local("dao_request_not_found", "No DAO order consent filed here matches this request. Nothing was relayed.");
+      const result = await app.daoConsents.state(hash);
+      if (result.ok) {
+        if (result.value.state === "pending") {
+          const request = result.value.request;
+          if ((["id", "dao", "organization", "agent", "agentId", "hash", "expiresAt"] as const).some(key => request[key] !== saved[key])
+            || JSON.stringify([...request.scopes].sort()) !== JSON.stringify([...saved.scopes].sort()))
+            return local("dao_request_mismatch", "The platform answered a different DAO consent vote.");
+        } else {
+          const consent = result.value.consent;
+          if (consent.organization !== organization || consent.agent !== agent || consent.agentId !== saved.agentId || consent.owner !== saved.dao
+            || consent.signer !== "dao" || consent.expiresAt !== saved.expiresAt
+            || JSON.stringify([...consent.scopes].sort()) !== JSON.stringify([...saved.scopes].sort()))
+            return local("dao_request_mismatch", "The platform answered a different signed DAO consent.");
+        }
+      }
+      return result;
+    },
+    /** Dry preview only. The platform proves exact spend, warnings and all spending authority. */
+    async orderQuote(organization: string, agent: string, input: LimitOrderQuote) {
+      const parsed = limitOrderQuoteInput.safeParse(input);
+      if (!parsed.success) return local("invalid_request", parsed.error.issues.map(issue => issue.message).join("; "));
+      return app.agent(organization, agent).call("limitOrders/quote", parsed.data);
+    },
+    /** Persist the request and exact terms before create; retain even a refusal so an old retry can never change terms. */
+    async orderCreate(organization: string, agent: string, input: LimitOrderRequest): Promise<OrderAnswer> {
+      if (!input || typeof input.requestId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(input.requestId))
+        return local("invalid_request", "Give a valid order requestId.");
+      const file = join(orderRequests, requestFile(organization, agent, input.requestId));
+      // Validation's future-deadline rule applies to fresh requests. A saved request is immutable even after its deadline;
+      // retry it as saved and let the platform answer its state. Never rebuild timestamps to pass validation.
+      if (!existsSync(file)) {
+        const parsed = limitOrderCreateInput.safeParse(input);
+        if (!parsed.success) return local("invalid_request", parsed.error.issues.map(issue => issue.message).join("; "));
+        if (readdirSync(orderRequests).filter(name => name.endsWith(".json")).length >= maxRequests)
+          return local("too_many_requests", "Archive old order requests before creating another order. Nothing was sent.");
+        exclusive(orderRequests, file, { organization, agent, request: parsed.data });
+      }
+      let saved: { organization: string; agent: string; request: LimitOrderRequest };
+      try { saved = JSON.parse(readFileSync(file, "utf8")) as typeof saved; }
+      catch { return local("state_review_required", "The saved order request is unreadable. Review retained state; nothing was sent."); }
+      if (!saved || typeof saved !== "object" || !saved.request || typeof saved.request !== "object" || Array.isArray(saved.request))
+        return local("state_review_required", "The saved order request is malformed. Review retained state; nothing was sent.");
+      const ordered = (request: LimitOrderRequest) => JSON.stringify(Object.fromEntries(Object.entries(request).sort(([a], [b]) => a.localeCompare(b))));
+      if (saved.organization !== organization || saved.agent !== agent || ordered(saved.request) !== ordered(input))
+        return local("request_conflict", "This order requestId has different saved terms. Nothing was sent.");
+      const calls = app.agent(organization, agent), made = await calls.call("limitOrders/create", saved.request);
+      return uncertain(made) ? calls.call("limitOrders/create", saved.request) : made;
+    },
+    orderGet: (organization: string, agent: string, id: string) => app.agent(organization, agent).call("limitOrders/get", { id }),
+    orderList: (organization: string, agent: string) => app.agent(organization, agent).call("limitOrders/list"),
+    orderRefresh: (organization: string, agent: string, id: string) => app.agent(organization, agent).call("limitOrders/refresh", { id }),
+    orderAttempted: (organization: string, agent: string, id: string) => ({
+      place: existsSync(claimFile(organization, agent, id, "place")), cancel: existsSync(claimFile(organization, agent, id, "cancel")),
+    }),
+    /** Only the current saved order's SDK text may reach approve/reject. These calls send no funds. */
+    async orderDecide(organization: string, agent: string, id: string, verdict: "approve" | "reject", signed: Signed): Promise<OrderAnswer> {
+      if (decisionHeld("order", organization, agent, id)) return decisionUnknown("order", id, verdict);
+      const calls = app.agent(organization, agent);
+      return relayDecision("order", organization, agent, id, verdict, signed, async () => {
+        const current = await calls.call("limitOrders/get", { id });
+        if (!current.ok) return current;
+        if (signed.message !== limitOrderText(current.value, verdict))
+          return local("signature_text_mismatch", "The signature is not over this order's exact terms. Nothing was relayed.");
+        return calls.call(verdict === "approve" ? "limitOrders/approve" : "limitOrders/reject", { id, signed });
+      });
+    },
+    /** One durable claim before one placement call, including concurrent HTTP requests and app restarts. */
+    async orderPlace(organization: string, agent: string, id: string): Promise<OrderAnswer> {
+      if (!limitOrderRef.safeParse({ id }).success) return local("invalid_request", "Give a valid order ID.");
+      if (!exclusive(orderClaims, claimFile(organization, agent, id, "place"), { organization, agent, id, action: "place", at: new Date().toISOString() }))
+        return followOrder(organization, agent, id, "place");
+      const placed = await app.agent(organization, agent).call("limitOrders/place", { id });
+      return uncertain(placed) ? followOrder(organization, agent, id, "place") : placed;
+    },
+    /** Initial cancellation is one attempt. Repeated initial requests only read, even when a continuation is possible. */
+    async orderCancel(organization: string, agent: string, id: string): Promise<OrderAnswer> {
+      if (!limitOrderRef.safeParse({ id }).success) return local("invalid_request", "Give a valid order ID.");
+      if (!exclusive(orderClaims, claimFile(organization, agent, id, "cancel"), { organization, agent, id, action: "cancel", at: new Date().toISOString() }))
+        return followOrder(organization, agent, id, "cancel");
+      const canceled = await app.agent(organization, agent).call("limitOrders/cancel", { id });
+      return uncertain(canceled) ? followOrder(organization, agent, id, "cancel") : canceled;
+    },
+    /** Only an explicit continuation with fresh platform proof may finish the same pre-submission cancellation. */
+    async orderContinueCancel(organization: string, agent: string, id: string): Promise<OrderAnswer> {
+      if (!limitOrderRef.safeParse({ id }).success) return local("invalid_request", "Give a valid order ID.");
+      const key = JSON.stringify([resolve(state), platform, organization, agent, id]);
+      const pending = cancellationContinuations.get(key);
+      if (pending) return pending;
+      // Deferring work until the next microtask installs the coalescing entry before any SDK call can begin.
+      const continuing = Promise.resolve().then(async (): Promise<OrderAnswer> => {
+        const calls = app.agent(organization, agent);
+        const saved = await calls.call("limitOrders/get", { id });
+        if (!saved.ok) return saved;
+        if (saved.value.id !== id) return local("order_identity_mismatch", "The platform returned another order. Nothing was canceled.");
+        const current = await calls.call("limitOrders/refresh", { id });
+        if (!current.ok) return current;
+        if (current.value.id !== id) return local("order_identity_mismatch", "The platform refreshed another order. Nothing was canceled.");
+        if (current.value.cancelMayResume !== true)
+          return local("cancel_not_resumable", "The platform has not proved this cancellation is still before submission. Follow this order with reads only.");
+        // Retain any existing claim, including a torn one. A positive platform proof never resets local attempts.
+        exclusive(orderClaims, claimFile(organization, agent, id, "cancel"), { organization, agent, id, action: "cancel", at: new Date().toISOString() });
+        const canceled = await calls.call("limitOrders/cancel", { id });
+        // No automatic continuation after a lost reply. Another explicit action must obtain fresh proof again.
+        return uncertain(canceled) ? followOrder(organization, agent, id, "cancel") : canceled;
+      });
+      cancellationContinuations.set(key, continuing);
+      try { return await continuing; }
+      finally { if (cancellationContinuations.get(key) === continuing) cancellationContinuations.delete(key); }
+    },
+    /** The platform constructs the DAO transaction; the app records its binding before showing it to a member. */
+    async daoOrderFile(organization: string, agent: string, id: string, verdict: "approve" | "reject") {
+      const filed = await app.daoLimitOrders.file({ organization, agent, order: id, verdict });
+      if (filed.ok) {
+        const request = filed.value.request;
+        if (request.organization !== organization || request.agent !== agent || request.order !== id || request.verdict !== verdict)
+          return local("dao_request_mismatch", "The platform answered a DAO request for different order terms. No transaction was offered.");
+        writeDurable(join(daoVotes, requestFile(organization, agent, request.id)), JSON.stringify(request));
+      }
+      return filed;
+    },
+    /** Polling can relay a DAO signature: check the saved binding before calling the platform, never afterwards. */
+    async daoOrderState(organization: string, agent: string, id: string, hash: string) {
+      const saved = daoOrderRequest(organization, agent, hash);
+      if (!saved) return local("dao_request_not_found", "No DAO vote filed here matches this order. Nothing was relayed.");
+      if (saved.order !== id)
+        return local("dao_request_mismatch", "The DAO vote belongs to another order. Nothing was relayed.");
+      const result = await app.daoLimitOrders.state(hash);
+      if (result.ok && (["id", "dao", "organization", "agent", "agentId", "order", "verdict", "hash"] as const)
+        .some(key => result.value.request[key] !== saved[key]))
+        return local("dao_request_mismatch", "The platform answered a different DAO vote. Do not treat its signature as this order's approval.");
+      return result;
+    },
     /**
      * Proposes swaps once per `requestId` for this Organization and agent. The request is recorded before the call; the
      * same `requestId` with other terms is refused here, as the platform would. After a lost answer the identical body

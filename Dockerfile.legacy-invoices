@@ -2,14 +2,18 @@
 # EXECUTOR=off, which the invoice server refuses because invoices send payouts, so this image can't
 # start a second executor for the payout agent. Removal follows in a later phase.
 # Secrets come from the host environment, never from this image.
-FROM node:24.22.0-slim
+FROM node:24.22.2-slim
 
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-# Legacy owner-contract consumers use the exact published SDK 0.4.0 pin.
+# Verified local consumer SDK; replace its alias with a published exact pin before release.
+COPY vendor/multiagency-sdk-0.5.8.tgz ./vendor/multiagency-sdk-0.5.8.tgz
+COPY vendor/multiagency-sdk-0.5.8.tgz.sha256 ./vendor/multiagency-sdk-0.5.8.tgz.sha256
+RUN cd vendor && sha256sum --check multiagency-sdk-0.5.8.tgz.sha256
 RUN pnpm install --frozen-lockfile
 COPY tsconfig.json ./
+COPY shared ./shared
 COPY src ./src
 
 # The money lock, the ops log (.ops/) and the invoices' record (.invoices/) are written to the working

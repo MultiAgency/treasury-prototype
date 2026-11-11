@@ -4,7 +4,8 @@ import { crossSite, readJson, SECURITY_HEADERS, sendFailure, sendJson as json, s
 import { challengeAnswer, clientAddress, hourlyLimit, type KeyLookup, parseSignIn, sessions, verifySignIn } from "../shared/signin.js";
 import { RuntimeTokens, type RuntimeScope } from "./runtime-tokens.js";
 import { randomBytes } from "node:crypto";
-import { consentMessage, proposalText } from "@multiagency/sdk";
+import { accessOf, consentMessage, limitOrderText, mayCall, proposalText, type DaoPolicy } from "@multiagency/treasury-app-sdk";
+import { daoPolicy as readDaoPolicy } from "../src/chain.js";
 import { commandExit, EXIT, executionExit, type Read, type TreasuryApp } from "./treasury-app.js";
 
 /** Sign-in challenges one address may ask for per hour. */
@@ -38,8 +39,9 @@ const COMMANDS: Record<string, { scope: RuntimeScope; consent: "read" | "treasur
  * owner's consent, signed terms, policy, grant and strategy. Its session cookie is its own, so a session from another
  * app on the same domain never counts here.
  */
-export function createAppServer({ host, secret, keyLookup, platform, tokens, web, secure = true }:
-  { host: string; secret: string; keyLookup: KeyLookup; platform: TreasuryApp; tokens: RuntimeTokens; web?: string; secure?: boolean }) {
+export function createAppServer({ host, secret, keyLookup, platform, tokens, web, secure = true, daoPolicy = readDaoPolicy }:
+  { host: string; secret: string; keyLookup: KeyLookup; platform: TreasuryApp; tokens: RuntimeTokens; web?: string; secure?: boolean;
+    daoPolicy?: (dao: string) => Promise<DaoPolicy | null> }) {
   if (secret.length < 32) throw new Error("Set SESSION_SECRET to a random value of at least 32 characters before starting the Treasury app");
   const session = sessions({ cookie: "treasury_app_session", secret, secure });
   const mayChallenge = hourlyLimit(CHALLENGES_PER_HOUR);
@@ -56,9 +58,122 @@ export function createAppServer({ host, secret, keyLookup, platform, tokens, web
     if (!who.ok || !held.ok || !who.value.agentId) return null;
     const now = Date.now(), { owner, agentId } = who.value;
     const live = held.value.consents.filter(c => c.organization === organization && c.agent === agent && c.owner === owner
-      && c.agentId === agentId && !c.revoked && c.expiresAt > now);
+      && c.agentId === agentId && c.host === who.value.host && c.deployment === who.value.deployment
+      && (c.signer ?? "wallet") === (who.value.signer ?? "wallet") && !c.revoked && c.expiresAt > now);
     // `host`: the platform's signing host, the NEP-413 recipient of the owner's signature over a proposal.
-    return { owner, agentId, host: who.value.host, scopes: new Set(live.flatMap(c => c.scopes)) };
+    return { owner, agentId, host: who.value.host, deployment: who.value.deployment,
+      signer: who.value.signer ?? "wallet", scopes: new Set(live.flatMap(c => c.scopes)) };
+  }
+
+  /** Each order call checks current membership itself: the service credential admits the app, not a DAO member. */
+  async function orderAuthority(account: string, organization: string, agent: string) {
+    const [now, discovery] = await Promise.all([authority(organization, agent), platform.discovery()]);
+    if (!now) return null;
+    // Never infer membership from Everyone, or treat an unreadable DAO policy as a wallet owner.
+    let policy: DaoPolicy | null;
+    try { policy = now.signer === "dao" ? await daoPolicy(now.owner) : null; }
+    catch { return null; }
+    const access = now.signer === "dao" && !policy ? null : accessOf(account, { account: now.owner, policy, signer: now.owner });
+    return { ...now, access, capable: discovery.ok && discovery.value.capabilities?.includes("treasury-limit-orders-v1") === true,
+      consented: now.scopes.has("treasury") && now.scopes.has("treasury-orders") };
+  }
+
+  /** Owner order controls. All nine procedures stay behind the server's app client and current consent. */
+  async function orders(req: IncomingMessage, res: ServerResponse, pathname: string) {
+    const account = session.account(req);
+    if (!account) return json(res, 401, { error: "Sign in first" });
+    const match = pathname.match(/^\/app\/orders(?:\/(access|quote|[a-f0-9]{32})(?:\/(decide|place|cancel(?:\/continue)?|refresh|dao))?|\/dao\/([^/]{1,256})|\/(consent)(?:\/([^/]{1,256}))?)?$/);
+    if (!match) return json(res, 404, { error: "Not found" });
+    const [, target, action, encodedHash, consentAction, encodedConsentHash] = match;
+    const url = new URL(req.url ?? "/", "http://app.invalid");
+    const reading = target === "access" || encodedHash !== undefined || encodedConsentHash !== undefined
+      || (!consentAction && target !== "quote" && !action && req.method === "GET");
+    if (req.method !== (reading ? "GET" : "POST")) return json(res, 405, { error: reading ? "Use GET" : "Use POST" });
+    if (target && /^[a-f0-9]{32}$/.test(target) && !action && req.method !== "GET") return json(res, 405, { error: "Use GET" });
+    const body = req.method === "POST" ? await readJson(req) : {};
+    const organization = String((req.method === "POST" ? body.organization : url.searchParams.get("organization")) ?? "");
+    const agent = String((req.method === "POST" ? body.agent : url.searchParams.get("agent")) ?? "");
+    if (!organization || !/^[a-z0-9-]{1,64}$/.test(agent)) return json(res, 400, { error: "Give organization and agent." });
+    const now = await orderAuthority(account, organization, agent);
+    if (!now) return json(res, 503, { error: "The platform didn't confirm the agent's owner and consent. Nothing was sent.", exit: EXIT.notSent });
+    if (!now.access) return json(res, 403, { error: "Only the current owner or an admitted DAO member may access orders.", exit: EXIT.notSent });
+    if (target === "access") return json(res, 200, {
+      capable: now.capable, consented: now.consented, owner: now.owner, signer: now.signer,
+      mayRead: now.capable && now.consented,
+      mayPrepare: now.capable && now.consented && mayCall(now.access, "limitOrders/create"),
+      mayExecute: now.capable && now.consented && mayCall(now.access, "limitOrders/place"),
+      mayVote: now.access.canVote, mayConsent: now.signer === "dao" ? now.access.canPropose : account === now.owner,
+    });
+    if (!now.capable) return json(res, 409, { error: "This host does not advertise treasury-limit-orders-v1.", exit: EXIT.notSent });
+    const respond = (result: { ok: boolean; kind?: string }) => json(res, 200, { exit: commandExit(result), result });
+    if (consentAction) {
+      if (now.signer !== "dao" || !now.access.canPropose) return json(res, 403, { error: "A DAO member with proposal rights must file or follow this consent vote." });
+      if (encodedConsentHash !== undefined) {
+        let hash: string;
+        try { hash = decodeURIComponent(encodedConsentHash); } catch { return json(res, 400, { error: "Invalid consent request ID." }); }
+        const saved = platform.daoOrderConsentRequest(organization, agent, hash);
+        if (!saved || saved.dao !== now.owner || saved.agentId !== now.agentId)
+          return json(res, 404, { error: "No saved consent vote for this DAO and agent." });
+        return respond(await platform.daoOrderConsentState(organization, agent, hash));
+      }
+      const days = body.days ?? CONSENT_DAYS.default;
+      if (typeof days !== "number" || !Number.isInteger(days) || days < CONSENT_DAYS.min || days > CONSENT_DAYS.max)
+        return json(res, 400, { error: `Choose a consent lifetime from ${CONSENT_DAYS.min} to ${CONSENT_DAYS.max} days.` });
+      const message = consentMessage({ host: now.host, deployment: now.deployment, organization, owner: now.owner,
+        agent, agentId: now.agentId, scopes: ["read", "treasury", "treasury-orders"], expiresAt: new Date(Date.now() + days * 86_400_000).toISOString() });
+      const result = await platform.daoOrderConsentFile(message);
+      return json(res, 200, { exit: commandExit(result), result, message });
+    }
+    if (!now.consented) return json(res, 403, { error: "Sign a new consent containing treasury and treasury-orders first.", exit: EXIT.notSent });
+    if (encodedHash !== undefined) {
+      let hash: string;
+      try { hash = decodeURIComponent(encodedHash); } catch { return json(res, 400, { error: "Invalid vote request ID." }); }
+      const saved = platform.daoOrderRequest(organization, agent, hash);
+      // state() can relay a signature, so bind it to this agent and DAO before making that call.
+      if (!saved || saved.dao !== now.owner || saved.agentId !== now.agentId || now.signer !== "dao")
+        return json(res, 404, { error: "No saved vote request for this DAO and agent." });
+      if (!now.access.canPropose) return json(res, 403, { error: "Your DAO role cannot follow an order vote relay." });
+      return respond(await platform.daoOrderState(organization, agent, saved.order, hash));
+    }
+    const id = target && /^[a-f0-9]{32}$/.test(target) ? target : undefined;
+    if (action === "dao") {
+      if (now.signer !== "dao" || !now.access.canPropose) return json(res, 403, { error: "A DAO member with proposal rights must file this vote." });
+      if (body.verdict !== "approve" && body.verdict !== "reject") return json(res, 400, { error: "Give verdict approve or reject." });
+      const filed = await platform.daoOrderFile(organization, agent, id!, body.verdict);
+      if (filed.ok && (filed.value.request.dao !== now.owner || filed.value.request.agentId !== now.agentId))
+        return json(res, 502, { error: "The platform returned a vote for another DAO or agent identity." });
+      return respond(filed);
+    }
+    const procedure = action === "decide" ? body.verdict === "reject" ? "limitOrders/reject" : "limitOrders/approve"
+      : action === "place" ? "limitOrders/place" : (action === "cancel" || action === "cancel/continue") ? "limitOrders/cancel"
+      : action === "refresh" ? "limitOrders/refresh" : target === "quote" ? "limitOrders/quote"
+      : id ? "limitOrders/get" : req.method === "GET" ? "limitOrders/list" : "limitOrders/create";
+    if (!mayCall(now.access, procedure)) return json(res, 403, { error: "Your current role cannot perform this order action.", exit: EXIT.notSent });
+    if (!id) {
+      if (req.method === "GET") return respond(await platform.orderList(organization, agent));
+      const { organization: _organization, agent: _agent, ...input } = body;
+      return respond(target === "quote" ? await platform.orderQuote(organization, agent, input as never)
+        : await platform.orderCreate(organization, agent, input as never));
+    }
+    if (!action) {
+      const result = await platform.orderGet(organization, agent, id);
+      const decisionHeld = platform.decisionHeld("order", organization, agent, id);
+      return json(res, 200, { exit: commandExit(result), result, decisionHeld, attempts: platform.orderAttempted(organization, agent, id),
+        ...(result.ok && !decisionHeld && { sign: { recipient: now.host, approve: limitOrderText(result.value, "approve"), reject: limitOrderText(result.value, "reject") } }) });
+    }
+    if (action === "decide") {
+      const { verdict, signed } = body as { verdict?: unknown; signed?: Record<string, unknown> };
+      if ((verdict !== "approve" && verdict !== "reject") || !signed || typeof signed !== "object"
+        || !["message", "nonce", "publicKey", "signature"].every(key => typeof signed[key] === "string"))
+        return json(res, 400, { error: "Give a verdict and the wallet's signed message, nonce, publicKey and signature." });
+      const result = await platform.orderDecide(organization, agent, id, verdict, signed as never);
+      const decisionHeld = platform.decisionHeld("order", organization, agent, id);
+      return json(res, 200, { exit: !result.ok && decisionHeld ? EXIT.unknown : commandExit(result), result, decisionHeld });
+    }
+    const result = action === "place" ? await platform.orderPlace(organization, agent, id)
+      : action === "cancel" ? await platform.orderCancel(organization, agent, id)
+      : action === "cancel/continue" ? await platform.orderContinueCancel(organization, agent, id) : await platform.orderRefresh(organization, agent, id);
+    return json(res, 200, { exit: commandExit(result), result, decisionHeld: platform.decisionHeld("order", organization, agent, id) });
   }
 
   /** An agent's call: its token, then the platform's current answer for this agent, then the relay. */
@@ -174,8 +289,9 @@ export function createAppServer({ host, secret, keyLookup, platform, tokens, web
       const organization = String(body.organization ?? ""), agent = String(body.agent ?? "");
       const days = body.days === undefined ? CONSENT_DAYS.default : body.days;
       if (!organization || !/^[a-z0-9-]{1,64}$/.test(agent) || typeof days !== "number" || !Number.isInteger(days) || days < CONSENT_DAYS.min || days > CONSENT_DAYS.max
-        || (body.execute !== undefined && typeof body.execute !== "boolean"))
-        return json(res, 400, { error: `Give organization, agent, optionally days (${CONSENT_DAYS.min}-${CONSENT_DAYS.max}) and execute (true or false).` });
+        || (body.execute !== undefined && typeof body.execute !== "boolean") || (body.orders !== undefined && typeof body.orders !== "boolean")
+        || (body.orders === true && body.execute === true))
+        return json(res, 400, { error: `Give organization, agent, optionally days (${CONSENT_DAYS.min}-${CONSENT_DAYS.max}), execute or orders (true or false); request orders separately from execute.` });
       const who = await platform.identity(agent);
       if (!who.ok) return json(res, 503, { error: "The platform didn't confirm the agent's owner. Try again." });
       if (who.value.owner !== account) return json(res, 403, { error: "Only the agent's owner connects it." });
@@ -186,7 +302,15 @@ export function createAppServer({ host, secret, keyLookup, platform, tokens, web
       if ([...pending.values()].filter(entry => entry.account === account).length >= MAX_PENDING_PER_OWNER)
         return json(res, 429, { error: "You have several consents waiting for a signature. Sign or wait for them to expire, then prepare again." });
       if (pending.size >= MAX_PENDING_CONSENTS) return json(res, 429, { error: "Too many consents waiting for a signature. Try again later." });
-      const scopes: ("read" | "treasury" | "treasury-execute")[] = body.execute === true ? ["read", "treasury", "treasury-execute"] : ["read", "treasury"];
+      // Order authority is a distinct, explicit consent. It never inherits unattended plan execution.
+      if (body.orders === true) {
+        const discovery = await platform.discovery();
+        if (!discovery.ok || !discovery.value.capabilities?.includes("treasury-limit-orders-v1"))
+          return json(res, 409, { error: "This host does not advertise treasury-limit-orders-v1." });
+        if (who.value.signer === "dao") return json(res, 403, { error: "A DAO must approve its order consent by vote." });
+      }
+      const scopes: ("read" | "treasury" | "treasury-execute" | "treasury-orders")[] = body.orders === true
+        ? ["read", "treasury", "treasury-orders"] : body.execute === true ? ["read", "treasury", "treasury-execute"] : ["read", "treasury"];
       const message = consentMessage({ host: who.value.host, deployment: who.value.deployment, organization, owner: account, agent,
         agentId: who.value.agentId, scopes, expiresAt: new Date(now + days * 86_400_000).toISOString() });
       const nonce = randomBytes(32).toString("base64");
@@ -247,6 +371,7 @@ export function createAppServer({ host, secret, keyLookup, platform, tokens, web
     }
     if (pathname === "/app/tokens" || pathname.startsWith("/app/tokens/")) return manage(req, res, pathname);
     if (pathname === "/app/proposals" || pathname.startsWith("/app/proposals/")) return proposals(req, res, pathname);
+    if (pathname === "/app/orders" || pathname.startsWith("/app/orders/")) return orders(req, res, pathname);
     if (pathname === "/app/connect" || pathname.startsWith("/app/connect/")) return connect(req, res, pathname);
     // The owner's page (web/'s `proposals` entry) and its assets; never the gateway's index.html.
     if (web && req.method === "GET" && pathname === "/") return serveStatic(res, web, "/proposals.html");

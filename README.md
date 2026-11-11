@@ -78,7 +78,7 @@ pnpm evidence:check
 ```
 
 The web app builds against the published owner contract, `@multiagency/sdk`, pinned to registry version
-`0.4.0`, rather than the copied backend router. The legacy contract and app client share this portable pin.
+`0.4.0`, rather than the copied backend router. The legacy owner contract keeps this portable pin. The order app uses the separate frozen SDK alias described below.
 - **Calls:** every call goes through its `ownerClient`, which validates answers against the published
   output schemas and never retries.
 - **Recovery:** the client's typed failure kinds decide what the UI does. A lost or unverifiable
@@ -133,6 +133,11 @@ The owner signs in on the app host, connects an agent under explicit consent, is
 and signs the platform's exact proposal terms before executing. The separate `proposals.html` entry
 serves that flow. App requests and token hashes live under private `APP_STATE` (default `.app/`);
 preserve them and the durable `decision-attempts/` claims across restarts and rollback. An unresolved owner decision remains poll-only; a `proposed` read cannot authorize another signature. This app starts no executor and has no hosted acceptance.
+
+Resting limit orders use the separate frozen SDK alias and `treasury-orders` consent.
+The app persists exact create requests and one-attempt claims; same-ID cancellation continuation
+requires fresh proven-unsent platform evidence. See [the consumer contract and remaining gates](docs/limit-orders-consumer.md)
+and [the app package runbook](docs/treasury-app-deployment.md).
 
 ## Not done yet
 

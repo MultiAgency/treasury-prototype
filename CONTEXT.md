@@ -122,6 +122,14 @@ still reads `approved`: the platform re-quotes before it claims, so that state p
 issues and revokes the outside agents' tokens, showing each secret once. Outside agents call the app runtime with those tokens. This is offline-tested candidate code;
 no app deployment or hosted acceptance is established.
 
+Resting limit orders additionally require the host capability `treasury-limit-orders-v1` and a separate
+`treasury` + `treasury-orders` consent. Each order uses the SDK's exact owner signing text (or a DAO vote);
+the app saves immutable create requests and durable one-attempt placement/cancellation claims. Resting,
+partial fills and cancellation acceptance are not completion; only a closed fill with final completed payout is.
+The app consumer uses the verified local 0.5.8 SDK alias, while legacy clients retain 0.4.0. This path is
+offline-tested only; production provider order routes and live enforcement remain unverified.
+See docs/limit-orders-consumer.md for state preservation and release gates.
+
 Owner decision relays keep durable `decision-attempts/` records below `APP_STATE` as soon as a decision attempt is admitted, before its platform reads, approval or rejection. An unanswered decision, an in-flight relay, or a torn record remains poll-only across app and browser restarts. A `proposed` read does not prove an earlier decision stopped, and never releases a signing hold. Only a definitive, typed refusal can archive that attempt and permit another explicit signature; unknown replies, plain HTTP errors and successful decisions keep the claim. Preserve active claims and refusal archives across backup and rollback.
 
 A lost definitive-refusal reply is not recovered by a generic unheld read. Without a receipt bound to the exact attempted decision, the browser remains poll-only and requires manual review of retained attempt evidence; clearing local storage or deleting a claim is not a recovery procedure.
