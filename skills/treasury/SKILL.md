@@ -26,6 +26,9 @@ Prerequisites:
 - An HTTPS Treasury origin and workspace name from the owner.
 - An owner-issued machine credential with `read` and `prepare`. It includes `execute-plan` only if
   the owner authorized execution for this task.
+- For execution, the owner's strategy-bound grant: the owner reviews the saved strategy and signs a
+  grant bound to its digest (label `treasury:<first 32 hex of the digest>`). Saving a different
+  strategy needs a new grant. See [Strategy-bound grant](#strategy-bound-grant).
 - Node 24+, with the helper installed (see Setup).
 
 Write the chosen swaps to `swaps.json`. This one moves 3 USDC, then 2 USDC, into wNEAR:
@@ -72,6 +75,39 @@ operations recorded SUCCESS (`7dc9d921-e540-4acd-ac28-5914f90c4217`,
 (`run-IdHRdA`) left one operation unknown and one unresolved. The runnable recipe, its inputs and both
 receipts are documented in the Treasury repository at `demo/treasury-strategy/README.md`. A simulator
 `SUCCESS` is not mainnet settlement.
+
+## Through the Treasury app (candidate)
+
+The Treasury app replaces the machine credential above for outside agents. It is an offline-tested candidate, not
+deployed. With it you **propose**; the owner approves each proposal's exact terms in their wallet and executes it
+themselves. Your token can't execute anything.
+
+Setup: the owner issues you a token on the Treasury app's page, under "Agent tokens" (`tat_…`, scopes `read` and/or
+`propose`, at most 24 hours), and can revoke it there at any time.
+Read `TREASURY_APP_URL` (the app's HTTPS origin), `TREASURY_ORGANIZATION`, `TREASURY_AGENT` and `TREASURY_APP_TOKEN`
+from your runtime's secret store. The helper is `scripts/treasury-app.mjs`; it needs no dependencies.
+
+```sh
+node /path/to/treasury/scripts/treasury-app.mjs unresolved                      # any here block execution until resolved
+node /path/to/treasury/scripts/treasury-app.mjs propose terms.json --request-id rebalance-2026-11-03
+node /path/to/treasury/scripts/treasury-app.mjs proposal PROPOSAL_ID           # its state: proposed, approved, executed…
+```
+
+`terms.json` holds `{ "legs": [{ "from", "to", "amount", "minAmountOut"? }], "expiresAt": "…", "note"?: "…" }`
+(one to eight legs, raw units, `expiresAt` at most 7 days ahead), or `"legs": "strategy"` for a rebalance toward the
+owner's strategy. Choose the request ID yourself and keep it with the file.
+
+Exit codes decide what you do, never the message text:
+- **0**: done. A new proposal reads `proposed` until the owner signs.
+- **2**: nothing was sent (refused, a missing scope or consent, a read that failed, or a usage or configuration
+  mistake). The message says why, with the platform's refusal code when it gave one. Reading again is safe.
+- **3**: unknown; it may have taken effect. Read `proposal` or `proposals`. If you must propose again, use the **same**
+  request ID and file, never a new ID: the app and the platform then answer the stored proposal.
+- **4**: partial; read the proposal's operations before anything else.
+
+Tell the owner what you proposed and its ID; they review it, sign and execute on the app's page. Then follow it with
+`proposal`: `executed`, `stopped` (read its operations: a swap may have run), `unknown` (blocks the agent's sends; keep
+reading, never act again), `expired`, `rejected`, `withdrawn` or `invalidated` (propose anew if the task still calls for it).
 
 ## Identity and authority
 
@@ -128,6 +164,23 @@ Otherwise present the plan and stop: approving a read or a preparation is not ap
 not change amounts or floors, and do not execute another plan in place of one whose outcome is
 unknown.
 
+## Strategy-bound grant
+
+On a platform host running the `@multiagency/sdk` 0.4.0 server, `execute` runs only while the owner's
+live grant binds the saved strategy. That server is not deployed yet. Under any other grant, `execute`
+prints one `rejected` event ("the agent's live grant doesn't bind the saved strategy…") and the helper
+reports "Refused before sending". The plan is not claimed and nothing is sent.
+
+The owner signs that grant, not you. In their own session they prepare `grant_issue` with label
+`treasury` and the `expectedStrategyDigest` from `strategy`, then sign and submit it like any owner
+action. Each saved strategy needs its own grant: after the owner saves a different strategy, machine
+plans are refused again until they sign a new one.
+
+When you see this refusal, report it to the owner and stop. Do not retry `execute`, and do not prepare
+a replacement plan: it would be refused the same way. Once the owner has signed, read `strategy`
+again. If the plan has expired or the strategy has changed, prepare it again, and execute only with the
+owner's authorization. `read`, `prepare` and `sweep` don't need this grant.
+
 ## Resume after interruption
 
 Keep:
@@ -141,7 +194,8 @@ Read again, with nothing resent:
 
 Classify what you saw:
 - **Refused:** a `rejected` event, or a recorded refusal on the plan's operation. Nothing was sent for
-  it. Prepare a replacement only if the task still authorizes it and nothing is unresolved.
+  it. Prepare a replacement only if the task still authorizes it and nothing is unresolved. When the
+  refusal is the strategy-bound grant, stop and ask the owner to authorize the saved strategy first.
 - **Unavailable:** a read failed. Reading again is safe; it says nothing about whether anything moved.
 - **Unknown:** the helper reported that the execution outcome may be unknown (a timeout, a disconnect
   or a malformed answer), or an operation is listed as unresolved. Something may have moved. Keep
@@ -175,7 +229,7 @@ credential.
 ## Supported in this release
 
 - **Release:** Treasury `treasury-a6`, on Proto's `@multiagency/sdk` 0.0.1.
-- **Helper:** `scripts/treasury.mjs` with `@orpc/client` 2.0.0-beta.44, pinned in
+- **Helper:** `scripts/treasury.mjs` with `@orpc/client` 2.0.0-beta.47, pinned in
   `scripts/package.json`. No SDK is required by the helper. The platform contract is published by
   Proto, and the helper needs no copy of it.
 - **Transport:** `POST /machine/v1/a/<name>/rpc/<procedure>`, with procedures and scopes as in

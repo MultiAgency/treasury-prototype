@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { mayCall } from "../src/gateway/allowlist.js";
 import { router } from "../src/router.js";
-import { sessionToken } from "../src/signin.js";
+import { sessionToken } from "../shared/signin.js";
 
 /**
  * The real gateway process in front of an instrumented agent server: every call that gets past the
@@ -124,133 +124,27 @@ const all = paths(router);
 const viewerAccess = { canSign: false, canPropose: false, canVote: false, canExecute: false, canManage: false };
 const beyondReads = all.filter((path) => !mayCall(viewerAccess, path));
 
-// Fetch owns Host in current Node; raw HTTP exercises the gateway's actual host boundary.
-const machineFetch = (url: string, options: { method?: string; headers?: Record<string, string>; body?: string } = {}) => new Promise<Response>((done, fail) => {
+// Raw HTTP, so the gateway sees the Host header as sent.
+const rawFetch = (url: string, options: { method?: string; headers?: Record<string, string>; body?: string } = {}) => new Promise<{ status?: number; body: string }>((done, fail) => {
   const req = request(url, options, res => {
     const chunks: Buffer[] = [];
-    res.on("data", chunk => chunks.push(Buffer.from(chunk))).on("end", () => done(new Response(Buffer.concat(chunks), {
-      status: res.statusCode, headers: Object.fromEntries(Object.entries(res.headers).filter((entry): entry is [string, string] => typeof entry[1] === "string")),
-    })));
+    res.on("data", chunk => chunks.push(Buffer.from(chunk))).on("end", () => done({ status: res.statusCode, body: Buffer.concat(chunks).toString() }));
   });
   req.on("error", fail); req.end(options.body);
 });
-const credentialRequest = (account: string | undefined, scopes: string[], agent = "treasury", extra: object = {}) => machineFetch(`${base}/gw/machine-credentials/${agent}`, {
-  method: "POST", headers: { host: "dao.test", "content-type": "application/json", ...(account && session(account)) },
-  body: JSON.stringify({ label: "fixture assistant", scopes, ttlSeconds: 60, ...extra }),
-});
-const machineCall = (token: string, path: string, agent = "treasury", headers: Record<string, string> = {}) => machineFetch(`${base}/machine/v1/a/${agent}/rpc/${path}`, {
-  method: "POST", headers: { host: "dao.test", authorization: `Bearer ${token}`, "content-type": "application/json", ...headers }, body: "{}",
-});
 
-test("DAO member permissions alone cannot authorize machine delegation", async () => {
-  assert.equal((await credentialRequest("council.near", ["read", "prepare", "execute"])).status, 403);
-});
-
-test("a warmed ownership cache cannot authorize a machine call during a failed identity read", async () => {
-  const issued = await credentialRequest(OWNER, ["read"], "wallet");
-  assert.equal(issued.status, 201);
-  const { token } = await issued.json();
-  assert.equal((await machineCall(token, "overview", "wallet")).status, 200);
+test("the retired machine interface has no route: bearer calls and credential management never reach an agent", async () => {
   reached.length = 0;
-  walletIdentityUnavailable = true;
-  try {
-    assert.equal((await machineCall(token, "overview", "wallet")).status, 403);
-    assert.deepEqual(reached, []);
-  } finally { walletIdentityUnavailable = false; }
-});
-
-test("replacing an agent under the same workspace name does not inherit machine authority", async () => {
-  const { token } = await (await credentialRequest(OWNER, ["read"], "wallet")).json();
-  reached.length = 0;
-  walletAgentId = "b".repeat(64);
-  try {
-    assert.equal((await machineCall(token, "overview", "wallet")).status, 403);
-    assert.deepEqual(reached, []);
-  } finally { walletAgentId = "a".repeat(64); }
-});
-
-test("machine provisioning requires wallet management and cannot delegate more authority than its issuer holds", async () => {
-  assert.equal((await credentialRequest(undefined, ["read"])).status, 401);
-  assert.equal((await credentialRequest("member.near", ["read"])).status, 403);
-  assert.equal((await credentialRequest("executor.near", ["execute-plan"])).status, 403);
-  assert.equal((await credentialRequest("manager.near", ["execute-plan"])).status, 403);
-  assert.equal((await credentialRequest("manager.near", ["prepare"])).status, 403);
-  assert.equal((await credentialRequest(OWNER, ["unknown"], "wallet")).status, 400);
-  assert.equal((await credentialRequest(OWNER, ["read"], "wallet", { ttlSeconds: 86_401 })).status, 400);
-  assert.equal((await credentialRequest(OWNER, ["read"], "wallet", { scopes: ["read", "read"] })).status, 400);
-  assert.equal((await credentialRequest("owner.near", ["read"], "stray")).status, 403);
-});
-
-test("machine scope, Treasury, host and browser boundaries refuse before forwarding; revocation is immediate", async () => {
-  const issued = await credentialRequest(OWNER, ["read", "prepare", "execute-plan", "sweep"], "wallet");
-  assert.equal(issued.status, 201);
-  const { token, credential } = await issued.json();
-  reached.length = 0; forwardedCredentials.length = 0;
-  assert.equal((await machineCall(token, "overview", "wallet")).status, 200);
-  assert.equal((await machineCall(token, "rebalance", "wallet")).status, 200);
-  assert.equal((await machineCall(token, "executePlan", "wallet")).status, 200);
-  assert.equal((await machineCall(token, "sweep", "wallet")).status, 200);
-  assert.deepEqual(reached, ["overview", "rebalance", "executePlan", "sweep"]);
-  assert.ok(forwardedCredentials.every(value => value === undefined), "bearer tokens never reach agent handlers");
-  const audit = readFileSync(join(dir, ".evidence", "interventions.jsonl"), "utf8");
-  assert.ok(audit.includes(credential.id));
-  assert.ok(!audit.includes(token));
-  reached.length = 0;
-  for (const path of ["owner/prepare", "owner/submit", "pay", "autopilot/enable", "autopilot/tick", "strategy/save", "recover", "setup", "unknown"])
-    assert.equal((await machineCall(token, path, "wallet")).status, 403, path);
-  assert.equal((await machineCall(token, "overview", "treasury")).status, 403);
-  assert.equal((await machineCall(token, "overview", "wallet", { host: "elsewhere.test" })).status, 421);
-  assert.equal((await machineCall(token, "overview", "wallet", { origin: "https://dao.test" })).status, 403);
-  assert.equal((await machineCall(token, "overview", "wallet", session(OWNER))).status, 403);
-  assert.equal((await machineCall(token + "x", "overview", "wallet")).status, 401);
-  assert.equal((await fetch(`${base}/a/treasury/rpc/overview`, { method: "POST", headers: { authorization: `Bearer ${token}` }, body: "{}" })).status, 401);
-  const listed = await machineFetch(`${base}/gw/machine-credentials/wallet`, { headers: { host: "dao.test", ...session(OWNER) } });
-  const records = await listed.json();
-  assert.ok(!JSON.stringify(records).includes(token));
-  assert.ok(!JSON.stringify(records).includes("secretHash"));
-  assert.equal((await machineFetch(`${base}/gw/machine-credentials/wallet/${credential.id}`, { method: "DELETE", headers: { host: "dao.test", ...session(OWNER) } })).status, 200);
-  assert.equal((await machineCall(token, "overview", "wallet")).status, 401);
+  for (const path of ["/machine/v1/a/wallet/rpc/overview", "/machine/v1/a/wallet/rpc/executePlan"]) {
+    const answer = await rawFetch(`${base}${path}`, { method: "POST", headers: { host: "dao.test", authorization: `Bearer tmc_00000000-0000-0000-0000-000000000000.${"A".repeat(43)}`, "content-type": "application/json" }, body: "{}" });
+    assert.notEqual(answer.status, 401, `${path} must not authenticate a machine credential`);
+    assert.doesNotMatch(answer.body, /credential/i, path);
+  }
+  for (const method of ["GET", "POST"]) {
+    const answer = await rawFetch(`${base}/gw/machine-credentials/wallet`, { method, headers: { host: "dao.test", "content-type": "application/json", ...session(OWNER) }, body: method === "POST" ? JSON.stringify({ label: "x", scopes: ["read"], ttlSeconds: 60 }) : undefined });
+    assert.equal(answer.status, 404, `${method} /gw/machine-credentials`);
+  }
   assert.deepEqual(reached, []);
-});
-
-test("a read-only machine cannot prepare or execute even when issued by the wallet owner", async () => {
-  const { token } = await (await credentialRequest(OWNER, ["read"], "wallet")).json();
-  reached.length = 0;
-  assert.equal((await machineCall(token, "rebalance", "wallet")).status, 403);
-  assert.equal((await machineCall(token, "executePlan", "wallet")).status, 403);
-  assert.equal((await machineCall(token, "sweep", "wallet")).status, 403);
-  assert.deepEqual(reached, []);
-});
-
-test("saved-plan execution and sweeping are independent at the HTTP boundary", async () => {
-  const plan = await (await credentialRequest(OWNER, ["execute-plan"], "wallet")).json();
-  const sweep = await (await credentialRequest(OWNER, ["sweep"], "wallet")).json();
-  reached.length = 0;
-  assert.equal((await machineCall(plan.token, "sweep", "wallet")).status, 403);
-  assert.equal((await machineCall(sweep.token, "executePlan", "wallet")).status, 403);
-  assert.deepEqual(reached, []);
-});
-
-test("machine calls fail closed on lost account access, changed ownership, unreadable credentials or audit failure", async () => {
-  const { token, credential } = await (await credentialRequest(OWNER, ["read", "execute-plan"], "wallet")).json();
-  const file = join(dir, ".machine-auth", `${credential.id}.json`);
-  const saved = readFileSync(file, "utf8");
-  reached.length = 0;
-  try {
-    writeFileSync(file, JSON.stringify({ ...JSON.parse(saved), account: "outsider.near" }));
-    assert.equal((await machineCall(token, "overview", "wallet")).status, 403);
-    writeFileSync(file, JSON.stringify({ ...JSON.parse(saved), owner: "changed.near" }));
-    assert.equal((await machineCall(token, "executePlan", "wallet")).status, 403);
-    writeFileSync(file, "{broken");
-    assert.equal((await machineCall(token, "executePlan", "wallet")).status, 500);
-    writeFileSync(file, saved);
-    const audit = join(dir, ".machine-auth", "access.jsonl");
-    const retained = readFileSync(audit);
-    rmSync(audit); mkdirSync(audit);
-    try { assert.equal((await machineCall(token, "executePlan", "wallet")).status, 500); }
-    finally { rmSync(audit, { recursive: true }); writeFileSync(audit, retained); }
-    assert.deepEqual(reached, []);
-  } finally { writeFileSync(file, saved); }
 });
 
 test("without a session, no procedure reaches the agent server", async () => {

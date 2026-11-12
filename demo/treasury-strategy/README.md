@@ -23,7 +23,7 @@ inputs, the owner's simulated decisions and a receipt.
 
 Prerequisites:
 
-- **Node 24.22.0.** The shell default here is Node 26, so select it first: `nvm install 24.22.0 && nvm use 24.22.0`.
+- **Node 24.22.2** (the images' version). The shell default here is Node 26, so select it first: `nvm install 24.22.2 && nvm use 24.22.2`.
   Then `pnpm install` in this repository and in the Proto checkout (`/Users/jlwaugh/agencies/dao/proto`).
 - Proto's Playwright Chromium (`pnpm exec playwright install chromium` in Proto) and `openssl`.
 - A Proto checkout or a pinned Proto stack snapshot, passed with `--proto DIR` or `PROTO_DIR`. The
@@ -42,13 +42,16 @@ Prerequisites:
 Run from this repository's root (`/Users/jlwaugh/agencies/dao/treasury`), with the snapshot to use:
 
 ```sh
-nvm use 24.22.0
-SNAPSHOT=/Users/jlwaugh/agencies/dao/proto/.test-artifacts/stack-snapshots/92815f4a75b45810eed815648f73769ea1a4b614b0ba66e137abbfa98389dd6f
+nvm use 24.22.2
+SNAPSHOT=/Users/jlwaugh/agencies/dao/sdk/.test-artifacts/stack-snapshots/c8dafe626d05552a1d101d8119f41441f67bb4c25dec60331dc98e2e62589de8
 node demo/treasury-strategy/run.mjs --proto "$SNAPSHOT" --yes                                    # happy path
+node demo/treasury-strategy/run.mjs --proto "$SNAPSHOT" --yes --fault unbound-grant              # no strategy-bound grant
 node demo/treasury-strategy/run.mjs --proto "$SNAPSHOT" --yes --fault lost-response --lost-at 2  # lost-response variant
 ```
 
-That snapshot is Proto's review candidate. Without `--proto`, the recipe uses the sibling `../proto` checkout.
+That snapshot is the platform's SDK 0.4.0 release candidate (source `1a7fe98`). Without `--proto`, the recipe uses the
+sibling `../proto` checkout. The recipe now needs a platform whose harness has the `authorizeStrategy` stack control
+(`test/e2e/stack-controls.mjs`); the earlier snapshots listed in section 4 predate it and no longer run with this recipe.
 
 Other options:
 
@@ -57,6 +60,8 @@ Other options:
   the receipt's result is `declined` (exit 1).
 - `--pause` waits for Enter before each step, for filming.
 - `--headed` shows the owner's consent page in a browser.
+- `--helper FILE` runs another implementation of the helper's commands in place of the packaged one, for evaluation.
+  The receipt records the file and its sha256 (`provenance.helper`, with `packaged: false`).
 - `--scenario FILE` uses another inputs file.
 
 The run directory is `.test-artifacts/demo/run-*/`. It holds:
@@ -74,7 +79,7 @@ the run. The exit code is 0 only when the result is `as expected`:
   never enter its submission log);
 - the saved plan, the provider's submissions (legs and floors) and Proto's recorded operations each hold
   exactly the chosen swaps, with distinct identities, and the submitted total equals the scenario's;
-- the budget is read again after execution (step 7 reports what is left per window, and the receipt
+- the budget is read again after execution (step 8 reports what is left per window, and the receipt
   keeps both reads). The simulated provider reports a fixed `spent_usd` of 0, so "after" equals "before"
   here; real budget charging is not exercised, and a difference would not be attributed to this plan.
 
@@ -95,10 +100,17 @@ different set of swaps, copy the file, edit `swaps` and pass it with `--scenario
   as the owner's prior setup, using the same offline fixture as Proto's agent-access E2E, with a
   scheduled-autopilot ceiling of zero. This is simulated owner configuration, not a recorded owner
   action. Chosen swaps keep the strategy's digest and cost limit but need not follow its targets.
+  The owner then signs the strategy-bound grant for it (see section 3). Saving a different strategy
+  would need a new grant.
 
 ## 3. Sequence
 
-Pre-roll, before the request: the strategy fixture is written. The owner grants read, prepare and
+Pre-roll, before the request: the strategy fixture is written. The owner then authorizes that saved
+strategy before any machine-route execution: Proto's `authorizeStrategy` stack control prepares
+`owner/prepare` `{ type: "grant_issue", label: "treasury", expectedStrategyDigest }` through the owner's
+route, signs it with the fixture key and follows it to `SUCCESS`. From the platform's 0.4.0 server on,
+`executePlan` through a machine credential runs only under that grant (label `treasury:<first 32 hex of
+the digest>`). The agent checks that the `strategy` it reads has the authorized digest. The owner grants read, prepare and
 execute-plan access at Proto's `/a/portfolio/access`, with a simulated wallet sign-in. There is no
 spending budget beyond the signed policy. The agent then reads balances, budget left, strategy and
 unresolved operations, and stops if any operation is unresolved.
@@ -112,6 +124,12 @@ unresolved operations, and stops if any operation is unresolved.
 
 The credential's `execute-plan` scope is the platform authority for execution. The prompt stands in
 for the owner telling the agent to act; Proto does not record it. Signing is simulated.
+
+**Unbound-grant variant** (`--fault unbound-grant`): the owner skips the strategy-bound grant, so the
+live grant stays a plain `treasury` grant. Preparation still saves the plan. `execute` must answer exactly
+one `rejected` event naming the grant, and the helper must print "Refused before sending" with its guidance:
+report to the owner, and don't retry or prepare a replacement until the owner authorizes the saved strategy.
+The provider records no submission, and no operation is recorded or unresolved.
 
 **Lost-response variant** (`--fault lost-response --lost-at N`):
 
@@ -139,6 +157,27 @@ Say on screen that the provider, wallet and settlement are simulated. A `SUCCESS
 simulator is not mainnet settlement.
 
 ## 4. Fresh evidence and remaining gaps
+
+**Runs on the platform's SDK 0.4.0 snapshot, 2026-11-03 UTC.** All three used
+`--proto /Users/jlwaugh/agencies/dao/sdk/.test-artifacts/stack-snapshots/c8dafe626d05552a1d101d8119f41441f67bb4c25dec60331dc98e2e62589de8`
+(source HEAD `1a7fe98`, no overlay, verified before and `unchangedAfterRun: true`), Node 24.22.1, packaged helper
+sha256 `691b131ac9c8…`, Treasury skill digest `ace831b722ae…` and the unchanged `scenario.json`. That skill digest
+predates a one-paragraph note added to `references/api.md` afterwards; the helper and `SKILL.md` are as run.
+These are simulator runs of this recipe, not a hosted platform.
+
+| Run | Result | Plan ID | Operations (from `activity`) | Unresolved |
+|---|---|---|---|---|
+| Happy path, `run-00NxHA` | as expected; exit 0 | `f6c2480d-0d48-4a46-b800-6f9f9fa290c1` | 3 USDC: SUCCESS `aa25042c-2824-4a5a-bbe4-68f23080b072`<br>2 USDC: SUCCESS `abdb1421-2025-4ea9-9149-ce15c55f5d89` | none |
+| No strategy-bound grant, `run-jrttO2` | as expected; exit 0 | `c304145c-b21e-4761-afe1-cb0034e00e49` | none (one `rejected` event) | none |
+| Lost response at swap 2, `run-qSCgir` | as expected; exit 0 | `fa0f5dc4-a59f-4c02-a471-622983fb09bf` | 3 USDC: SUCCESS `eea1afe7-768b-4a9d-8396-d9d4a4e75327`<br>2 USDC: outcome unknown, no provider reference | `external:beb77c70-9657-4f5f-8d6d-189c90e31043` |
+
+- **Happy path:** the strategy-bound grant settled for digest `sha256:c4eff28b…3ec6f`, which equals the `strategy` the
+  agent read. Credential scopes exactly `read`, `prepare` and `execute-plan`; 2 submissions, distinct identities,
+  total 5000000 (5 USDC), floors as planned.
+- **No strategy-bound grant:** `execute` exited 1 with one `rejected` event ("the agent's live grant doesn't bind the
+  saved strategy…") and the helper's "Refused before sending" guidance; 0 submissions.
+- **Lost response:** 2 submissions. The replay and the execution of a newly prepared plan
+  (`00f3d6ec-4d28-438f-8651-54a18f532012`) were both refused with CONFLICT; the provider still recorded 2 submissions.
 
 **Review candidate runs, 2026-10-19 UTC.** Both used Proto's review candidate snapshot
 `--proto /Users/jlwaugh/agencies/dao/proto/.test-artifacts/stack-snapshots/92815f4a75b45810eed815648f73769ea1a4b614b0ba66e137abbfa98389dd6f`
@@ -254,9 +293,11 @@ Remaining gaps:
   policy. Proto request W1 is recorded at low priority.
 - **Not exercised:** provider concurrency, atomic budget charging and real settlement timing.
 - **Dependency on Proto test files:** the recipe imports Proto's E2E harness modules
-  (`test/e2e/environment.mjs`, `wallet.mjs`, `provider.mjs`). A pinned snapshot fixes their content;
+  (`test/e2e/environment.mjs`, `wallet.mjs`, `provider.mjs`, `stack-controls.mjs`). A pinned snapshot fixes their content;
   a later snapshot may change their interface (Proto request W2, optional).
-- **Strategy setup is a fixture:** it is not configured through the owner's dashboard in this recipe.
+- **Strategy setup is a fixture:** it is not configured through the owner's dashboard in this recipe. The
+  strategy-bound grant goes through the owner's own route, but its signature comes from the stack's fixture
+  key, not a wallet.
 - **Recovery is outside the agent's access:** after an unknown outcome, the agent can only observe.
   Resolving it needs an owner or member action in the dashboard.
 - **Wallet owners only:** DAO machine delegation is refused.

@@ -21,6 +21,8 @@ web/node_modules
 
 # Self-service treasury registry and private per-owner state
 .treasuries/
+.app/
+.machine-auth/
 
 # Retained private state and local verification artifacts never enter the build context.
 .agreements/

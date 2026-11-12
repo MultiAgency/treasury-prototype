@@ -1,11 +1,8 @@
 import type { Intent } from "@near-intents-agent-api/sdk";
 import { AccountDoesNotExistError, FunctionCallError, Near } from "near-kit";
 import { ASSETS } from "./policy.js";
+import { fastnearHeaders, mainnet } from "../shared/near.js";
 
-/** A FastNear API key, when set, goes in a header (not the URL) on RPC and indexer calls. */
-const fastnearHeaders: Record<string, string> = process.env.FASTNEAR_API_KEY
-  ? { Authorization: `Bearer ${process.env.FASTNEAR_API_KEY}` }
-  : {};
 
 /**
  * One POST to a FastNear indexer API, keyed when there is a key; throws on any error it reports, and
@@ -46,14 +43,6 @@ export const delegateTransaction = (near: Near, signerId: string, { receiverId, 
     near.transaction(signerId),
   );
 
-/** How every `Near` client here reaches mainnet: the keyed FastNear host when there is a key. */
-export const mainnet = {
-  network: {
-    rpcUrl: process.env.NEAR_RPC_URL ?? (process.env.FASTNEAR_API_KEY ? "https://rpc.mainnet.fastnear.com" : "https://free.rpc.fastnear.com"),
-    networkId: "mainnet",
-  },
-  headers: fastnearHeaders,
-};
 
 /** Read-only NEAR access for the treasury view; owner signing builds its own client in owner.ts. */
 const near = new Near(mainnet);

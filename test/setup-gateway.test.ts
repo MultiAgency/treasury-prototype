@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { sessionToken } from "../src/signin.js";
+import { sessionToken } from "../shared/signin.js";
 
 /** Real gateway, local fixtures: ownership evidence is separate from onboarding availability.
  * Count forwarded record reads to prove denied callers never reach the agent handler.

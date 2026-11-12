@@ -1,0 +1,1 @@
+deployment=multiagency-treasury account=multiagentic.near

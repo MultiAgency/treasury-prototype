@@ -27,7 +27,8 @@ const skillPage = {
 
 export default defineConfig({
   plugins: [pluginReact()],
-  source: { entry: { index: "./src/main.tsx" }, define: { "process.env.PUBLIC_TREASURY_ONLY": JSON.stringify(process.env.PUBLIC_TREASURY_ONLY ?? "true") } },
+  // `proposals`: the Treasury app's owner page, served by app/server.ts on its own host (no gateway Shell).
+  source: { entry: { index: "./src/main.tsx", proposals: "./src/proposals/main.tsx" }, define: { "process.env.PUBLIC_TREASURY_ONLY": JSON.stringify(process.env.PUBLIC_TREASURY_ONLY ?? "true") } },
   // The one build seam: only the shared build bundles the inherited Payables/Portfolio surface.
   resolve: { alias: { "@legacy": treasuryOnly ? "./src/legacy/absent.ts" : "./src/legacy/surface.ts" } },
   html: {

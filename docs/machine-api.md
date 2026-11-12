@@ -1,215 +1,43 @@
-# Treasury machine interface v1
+# Treasury machine interface v1: removed
 
-Shared authentication, delegation and access-management UI belong to Proto. This standalone candidate
-is a reference for the owning session; see the [Proto handoff](proto-agent-access-handoff.md).
+Treasury's own `/machine/v1/a/<treasury-name>/rpc/<procedure>` route, its credential management
+(`/gw/machine-credentials/<name>`) and its credential store (`src/gateway/machine-auth.ts`) were removed from this
+repository on 2026-11-03 (user decision, `coordination/treasury-app-move.md`, Answers 4). Outside agents move to the
+platform's app scope (`/apps/v1`) through a Treasury app; until that exists, the packaged
+[Treasury skill](../skills/treasury/SKILL.md) targets the platform's machine route, described below.
+`test/gateway-denial.test.ts` checks that a bearer call and credential management no longer reach an agent.
 
-Offline-tested candidate; not deployed. The hosted gateway accepts expiring bearer credentials at
-`/machine/v1/a/<treasury-name>/rpc/<procedure>`. This is Treasury's gateway interface to its existing
-executor, separate from the upstream NEAR Intents Agent API. It does not expose the provider API key,
-provider grant token, owner signatures, or a second executor.
+## Production still serves the old route until redeployed
 
-## Provision and revoke
+Observed 2026-11-03 UTC, read-only: the `treasury` service (Railway project `platform`, production) runs deployment
+`95451b7a-27d9-4652-a0d9-b502b5d0f420` (2026-10-16T04:53Z, a CLI upload with no commit metadata), with
+`TREASURY_SELF_SERVICE=true` and `DASHBOARD_FILE=/app/deploy/treasury.json`. An unauthenticated
+`POST https://treasury.multiagency.ai/machine/v1/a/treasury/rpc/instance` answered
+`401 {"error":"Invalid, expired or revoked credential"}`, so that deployment serves an earlier version of the route.
+Which credentials exist and what that version permits was not checked. The route leaves production only when the
+owner redeploys from a tree without it; such a redeploy also ships every other unreleased change.
 
-Sign in normally with your wallet at the intended Treasury host. Credential management uses that
-browser session, never another machine credential. The configured area must be `treasury`.
-Only an established wallet owner may issue credentials, with fresh chain and provider ownership
-evidence. DAO machine delegation is refused: member permissions are not proof of DAO consent.
-Existing DAO records may still be listed or revoked by current managers; they cannot authorize calls.
+## State: archive `.machine-auth/`, don't delete it
 
-Management endpoints return ordinary JSON:
+`.machine-auth/` at the gateway root (`/data/state` in production) holds credential hashes, expiry and revocation
+flags and `access.jsonl` attribution. Nothing reads it after the removal. Preserve it with all other state during any
+backup, migration or redeploy ([operations](operations.md)), and archive it rather than delete it: it is the record of
+which machine calls were made. Machine entries in `.evidence/interventions.jsonl` (`machineCredentialId`) stay as they
+are. No money record needs conversion.
 
-| Method | Path | Behavior |
-| --- | --- | --- |
-| POST | `/gw/machine-credentials/<name>` | Issue with `label`, `scopes`, and optional `ttlSeconds` |
-| GET | `/gw/machine-credentials/<name>` | List metadata, including issuer, scopes, expiry and revocation; no hashes or secrets |
-| DELETE | `/gw/machine-credentials/<name>/<id>` | Revoke; any current manager of that Treasury may revoke |
+## Strategy-bound grant before plan execution
 
-For example, in the developer console of your already signed-in Treasury page:
+The MultiAgency platform's machine route, from the `@multiagency/sdk` 0.4.0 server (dao/sdk `1a7fe98`;
+the package is published, but no host runs that server yet), runs `executePlan` for a machine credential only while
+the owner's live grant binds the saved strategy. That grant's label is `treasury:<first 32 hex of the strategy
+digest>`. Under any other grant it answers one `rejected` event ("the agent's live grant doesn't bind the saved
+strategy…"); the plan is not claimed and nothing is sent. `read`, `prepare` and `sweep` are unchanged, and so is the
+owner's own session. Per platform source at that commit (`src/planning/strategy-grant.ts`, `src/rpc/treasury.ts`).
 
-```javascript
-const response = await fetch('/gw/machine-credentials/treasury', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    label: 'Treasury assistant',
-    scopes: ['read', 'prepare', 'execute-plan'],
-    ttlSeconds: 3600,
-  }),
-});
-if (!response.ok) throw new Error(`Credential issuance failed: ${response.status}`);
-const issued = await response.json();
-// Transfer issued.token to the machine client's secret store; it is returned only here.
-// Retain issued.credential.id to identify or revoke this credential.
-```
+Before any machine-route execution, the owner reviews the saved strategy and signs the grant in their own session:
+`owner/prepare` with `{ type: "grant_issue", label: "treasury", expectedStrategyDigest: <digest from strategy/get> }`,
+then signs and submits it like any owner action. Each saved strategy needs its own grant. After the owner saves a
+different strategy, machine plans are refused again until they sign a new one. The packaged skill helper reports this
+refusal as "Refused before sending" and tells the agent to report it to the owner, not to retry execution or prepare a
+replacement plan (offline-tested: `test/treasury-skill-helper.test.ts`).
 
-Select only the scopes the client needs. Default lifetime is one hour; allowed lifetimes are 60 seconds
-through 24 hours. Renewal means issuing a new credential and revoking the old one. A bearer credential
-authorizes whoever holds it: keep it in the client's secret store, outside prompts, skill files,
-repositories and logs. Use HTTPS on hosted systems. Do not export a browser session to the machine.
-
-## Call the interface
-
-Use POST with `Authorization: Bearer <token>` and JSON encoded using the existing oRPC wire protocol.
-Do not send cookies or an Origin header. Browser-session authentication is not accepted on this path;
-machine credentials are not accepted as dashboard sessions. There is no CORS opt-in.
-
-This read-only example uses `TREASURY_MACHINE_TOKEN` from the client environment:
-
-```javascript
-const response = await fetch(
-  'https://treasury.multiagency.ai/machine/v1/a/treasury/rpc/overview',
-  {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.TREASURY_MACHINE_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ json: null }),
-  },
-);
-if (!response.ok) throw new Error(`Treasury read failed: ${response.status}`);
-const { json: overview } = await response.json();
-```
-
-The host, workspace name and actual provider agent ID must match the credential. The canonical example above is a candidate
-URL, not evidence that the interface is deployed. Gateway authentication failures are plain JSON
-`{ error }`; upstream replies keep the existing oRPC envelope or event stream. Use the repository's
-pinned `@orpc/client` version (`2.0.0-beta.43`) for streaming procedures:
-
-```typescript
-import { createORPCClient } from '@orpc/client';
-import { RPCLink } from '@orpc/client/fetch';
-import type { RouterClient } from '@orpc/server';
-import type { Router } from '../src/router.js'; // adapt to your checkout
-
-const client: RouterClient<Router> = createORPCClient(new RPCLink({
-  origin: 'https://treasury.multiagency.ai',
-  url: '/machine/v1/a/treasury/rpc',
-  headers: { authorization: `Bearer ${process.env.TREASURY_MACHINE_TOKEN}` },
-}));
-const preview = await client.rebalance(); // saves a plan; moves no funds
-// Review the returned plan before a separately authorized execution call.
-// executePlan({ planId }) and sweep({ execute }) return async event streams.
-```
-
-## Supported procedures and scopes
-
-| Scope | Procedures |
-| --- | --- |
-| `read` | `instance`, `overview`, `policyHistory`, `strategy/get`, `autopilot/get`, `activity`, `unresolved`, `autopilot/evidence`, `autopilot/log`, `ledger`, `ledgerCsv` |
-| `prepare` | `rebalance` (uses saved allocation targets); `externalPlan` (quotes chosen swaps and saves the complete plan; moves no funds) |
-| `execute-plan` | `executePlan` with `{ planId }`, executing an existing saved plan |
-| `sweep` | `sweep` with `{ execute: false }` to preview or `{ execute: true }` to shield managed public balances |
-
-Scopes do not imply one another. No owner preparation/submission, policy/grant changes, settings,
-schedule controls, arbitrary swaps/transfers, recovery, Payables or Invoices procedures are exposed.
-The sweep preview is part of the sweep scope because the same procedure can shield funds.
-Plan execution does not authorize sweeps, and sweep authority does not authorize plan execution.
-Enabling schedules and manually starting autopilot ticks remain dashboard actions.
-
-The v1 credential and scope contract is explicit; result types and event streams are the existing
-Treasury RPC contract, not a separately frozen public SDK. External integrations should pin a
-compatible Treasury revision and client version. A standalone public SDK remains a gap. The repository packages a [Treasury skill](../skills/treasury/SKILL.md) with a pinned Node client helper.
-
-## Failure and evidence semantics
-
-- Every call checks expiry/revocation, host, workspace and configured owner, then reads fresh chain
-  ownership classification and provider identity after receiving the body. There is no machine fallback
-  to the dashboard's cached ownership observations. Failed reads, a missing agent, DAO ownership,
-  owner mismatch or a changed provider agent ID refuse forwarding. This is request-time evidence,
-  not distributed fencing or a guarantee against changes after the check.
-  Expiry and revocation are checked again immediately before attribution and forwarding. Revocation
-  does not cancel an operation already forwarded to the executor.
-- Successful authentication does not authorize a money operation. Existing policy, purpose, grant,
-  plan, money lock and unresolved-operation checks still apply at the executor.
-- Every accepted machine call is attributed before forwarding in `.machine-auth/access.jsonl` without
-  request bodies or credentials. Preparation and execution also retain the existing intervention
-  classification with a machine credential ID. Failure to retain either required record refuses forwarding.
-- A saved plan is claimed at most once by the existing executor. A sweep is a fresh action per call,
-  not a saved-plan execution. Do not automatically retry execution after a disconnect or unknown response;
-  inspect retained activity and unresolved operations first. Ending a stream does not itself prove settlement.
-- Authentication failure returns 401, scope/ownership/agent-identity/host-bound workspace denial 403, an unconfigured
-  host 421, and unknown machine paths 404. Only POST is accepted for procedures (405 otherwise).
-  Each valid credential is limited to 600 procedure requests per hour per gateway process (429).
-  Restart resets this request limiter; it is not a spending control.
-- Credential-file corruption, audit failure and other internal faults refuse with a sanitized 500.
-  RPC requests are bounded to 16 KiB. Invalid issuance input returns 400. Upstream outages can return 502.
-
-## State preservation and rollout
-
-`.machine-auth/` is additive gateway state, created privately on first issuance. Existing money state needs no
-conversion and no credential is issued automatically. New credential records use storage version 2 with
-an actual agent ID and separate execution/sweep scopes. Earlier experimental version-1 records remain
-listable and revocable, but authenticate as invalid. They are never upgraded into authority implicitly;
-issue replacement credentials after reviewing the narrowed permissions. This compatibility needs no
-rewrite of existing records. Preserve this directory along with all existing
-state during backup, migration and deployment, with the gateway and executor writers stopped as described
-in [operations.md](operations.md). Credential files use mode 0600 in a mode-0700 directory. Restore hashes,
-expiry and revocation flags unchanged; restoring an old snapshot can restore a previously revoked credential,
-so invalidate affected credentials before accepting requests after such a rollback.
-
-One gateway process owns credential issuance and revocation; this is not distributed credential fencing.
-Storage is capped at 1024 credential records. Archive expired/revoked records while stopped if needed;
-removing a record invalidates that credential. No migration or cleanup should modify money records.
-No deployment, real credential provisioning, or live execution is part of the offline verification.
-
-Tests: `test/machine-auth.test.ts`, the real-process gateway fixture in `test/gateway-denial.test.ts`,
-and the legacy-host API boundary in `test/gateway-canonical.test.ts`. They cover credential hashing,
-restart compatibility, expiry, revocation, scope/host/workspace isolation, current-permission denial,
-owner-action exclusion, secret stripping, and refusal before forwarding on storage/audit failure.
-
-## Verified authorization fixes
-
-Offline regressions reproduced three failures in the initial candidate: a DAO council member could issue
-credentials without DAO consent, a warmed ownership cache permitted calls during a failed live identity
-read, and replacing the provider agent under the same workspace name retained credential authority.
-The candidate now refuses DAO delegation, requires fresh identity evidence, and binds each credential
-to the actual agent ID. Plan execution and sweep permissions are also independent, with cross-scope
-denials tested. These changes do not establish independent review, hosted acceptance, sender-constrained
-credentials, or a DAO approval mechanism; those remain open.
-
-## External-strategy acceptance gates
-
-Autonomous external-strategy execution with meaningful funds is not accepted. The candidate now
-accepts an outside agent's chosen swaps through `externalPlan`. The packaged skill helper has completed
-a real-gateway/real-executor flow against a simulated provider: prepare, execute the exact saved plan,
-inspect its operation, reject repeated execution, and revoke access. This is offline evidence, not
-hosted acceptance or proof of the deployed provider's spending guarantees.
-
-| Gate | Required evidence | Current status |
-| --- | --- | --- |
-| External strategy to saved plan | An outside client submits chosen actions; Treasury validates and quotes every route and returns a plan bound to the agent, mandate and applicable strategy | Offline-tested external planner and skill-helper end-to-end flow |
-| Exact authorized execution | The same client executes that plan through the real gateway and executor against an offline simulated provider; changed inputs, expired plans and missing authority refuse | Exact plan execution and replay refusal tested offline through the skill helper; broader fault acceptance outstanding |
-| Failure and retry behavior | Lost responses, client/executor restart, duplicate requests and partial execution retain operation identity and block new sends when outcomes are unresolved | Existing executor fault tests; external-client acceptance still required |
-| Delegation lifecycle | Outside-client acceptance covers scope isolation, expiry, revocation, ownership changes and credential rotation without replaying execution | Authentication boundaries plus external-client revocation tested offline; complete rotation/fault acceptance outstanding |
-| Provider cumulative limits | Authorized isolated mainnet observations exercise per-asset caps and USD budget across concurrent grants/clients, including failure/recovery cases; deployed-version evidence identifies what was tested | Sequential asset-cap refusals and one USD concurrency trial observed; general enforcement unverified |
-| Exposure claim | Explicitly distinguish turnover limits from holdings/market exposure; any exposure-bound claim needs its own defined valuation and enforcement mechanism | Spending caps do not bound market exposure; no exposure guarantee claimed |
-
-Offline tests can establish our request ordering, authorization boundaries and failure handling. They
-cannot prove that the deployed provider charges budgets atomically. A successful bounded mainnet trial
-also establishes only its tested conditions. See [enforcement obligations](enforcement.md) for the
-provider questions and existing observations. Additional live tests require explicit authorization;
-none are implied by this acceptance plan.
-
-## External chosen swaps
-
-`externalPlan` accepts a strict object with `swaps`, one to eight entries of `{ from, to, amount,
-minAmountOut? }`. Use managed USDC, wNEAR or ETH asset IDs, with positive atomic-unit strings of at
-most 40 digits. Output assets must be allowed by the observed policy. Extra fields and self-swaps
-are refused. A caller-supplied minimum can tighten, never lower, the provider's quote floor and cannot
-exceed its quoted output. An unsuitable quote refuses the whole plan; no actions are silently dropped.
-The server rechecks feasibility and policy/strategy/balance observations before saving. Execution
-requotes and rechecks the saved plan using the existing controls.
-
-External plans have `source: external`, an existing mandate/strategy snapshot, and the same five-minute
-expiry and execution claim as other plans. Earlier `rebalance` and `steward` plans remain unchanged
-and readable; this additive source needs no record conversion. Preserve `.plans/` and all other state.
-The external agent chooses actions rather than adopting the saved allocation targets, but the owner's
-cost limit, strategy digest and provider authority still constrain execution. External calls use the
-existing Treasury plan-execution semantics, not scheduled autopilot: the schedule's per-run auto-execute
-ceiling does not apply. Credentials have no separate per-client spending budget. Owners must understand
-that distinction before delegating autonomous execution.
-
-See [the skill's input contract](../skills/treasury/references/api.md) and
-`test/external-plan.test.ts`. The real-stack scenario is in `test/e2e/workspace.spec.mjs`; it uses the
-actual packaged `skills/treasury/scripts/treasury.mjs` helper against a simulated provider and wallet.

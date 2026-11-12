@@ -6,14 +6,13 @@ import { createServer, type IncomingMessage, request, type ServerResponse } from
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isIntervention, mayCall } from "./allowlist.js";
-import { BadRequest, crossSite, readJson, SECURITY_HEADERS, sendFailure, sendJson as json, serveStatic } from "../http.js";
-import { chainKeyLookup, challengeAnswer, clientAddress, hourlyLimit, parseSignIn, sessions, verifySignIn } from "../signin.js";
+import { BadRequest, crossSite, readJson, SECURITY_HEADERS, sendFailure, sendJson as json, serveStatic } from "../../shared/http.js";
+import { chainKeyLookup, challengeAnswer, clientAddress, hourlyLimit, parseSignIn, sessions, verifySignIn } from "../../shared/signin.js";
 import { type AgentEntry, childEnv, hostOf, loadConfig } from "./config.js";
 import { recentSignProposals } from "./proposals.js";
-import { ownerOf, resolveAccess, resolveAgentAccess, resolveMachineAccess } from "./roles.js";
+import { ownerOf, resolveAccess, resolveAgentAccess } from "./roles.js";
 import { appendSynced } from "../synced.js";
 import { canonicalHostAnswer, signingHost } from "./canonical-host.js";
-import { MachineCredentials, MachineIssue, machineMayCall } from "./machine-auth.js";
 
 /**
  * The hosted dashboard: the one public process. It signs members in, decides per request what each
@@ -42,8 +41,6 @@ const DIST = join(APP, "web/dist");
 const SECRET = process.env.SESSION_SECRET ?? "";
 if (SECRET.length < 32) throw new Error("Set SESSION_SECRET to a random value of at least 32 characters before starting the gateway");
 const session = sessions({ cookie: "dao_session", secret: SECRET, secure: true });
-const machineCredentials = new MachineCredentials(".machine-auth");
-const mayUseMachine = hourlyLimit(600);
 
 const INTERVENTIONS = join(".evidence", "interventions.jsonl");
 /**
@@ -121,60 +118,6 @@ createServer(async (req, res) => {
     if (pathname === "/health") return json(res, 200, { ok: true });
 
     const signHost = signingHost(req, HOST, config.signin_hosts);
-    // Machine credentials are independent of browser sessions and never accepted by dashboard RPC.
-    if (pathname.startsWith("/machine/")) {
-      if (!signHost) return json(res, 421, { error: "Use a configured signing host." });
-      if (req.headers.origin !== undefined || req.headers.cookie !== undefined) return json(res, 403, { error: "Use a machine client without browser credentials." });
-      const call = pathname.match(/^\/machine\/v1\/a\/([a-z0-9-]+)\/rpc\/([A-Za-z][A-Za-z0-9]*(?:\/[A-Za-z][A-Za-z0-9]*)*)$/);
-      if (!call) return json(res, 404, { error: "Not found" });
-      if (req.method !== "POST") return json(res, 405, { error: "Use POST" }, { allow: "POST" });
-      const credential = machineCredentials.authenticate(req.headers.authorization, signHost);
-      if (!credential) return json(res, 401, { error: "Invalid or expired machine credential" }, { "www-authenticate": "Bearer" });
-      if (!mayUseMachine(credential.id)) return json(res, 429, { error: "Machine credential request limit reached" }, { "retry-after": "3600" });
-      const agent = config.agents.find(a => a.name === call[1] && a.area === "treasury");
-      if (!agent || agent.name !== credential.agent || agent.owner !== credential.owner) return json(res, 403, { error: "Credential does not authorize this Treasury" });
-      const body = JSON.stringify(await readJson(req));
-      const authority = await resolveMachineAccess(credential.account, agent);
-      if (!authority || authority.agentId !== credential.agentId || !machineMayCall(credential.scopes, authority.access, call[2]!)) return json(res, 403, { error: "Fresh wallet ownership, agent identity or machine scope does not authorize this procedure" });
-      if (!machineCredentials.authenticate(req.headers.authorization, signHost)) return json(res, 401, { error: "Machine credential expired or was revoked before forwarding" });
-      appendSynced(join(".machine-auth", "access.jsonl"), { at: new Date().toISOString(), account: credential.account,
-        agent: agent.name, path: call[2], machineCredentialId: credential.id });
-      // Preparation is still an intervention. Failure to retain its attribution refuses the call.
-      if (isIntervention(call[2]!)) {
-        mkdirSync(".evidence", { recursive: true });
-        appendSynced(INTERVENTIONS, { at: new Date().toISOString(), account: credential.account,
-          agent: agent.name, path: call[2], machineCredentialId: credential.id });
-      }
-      return forward(req, res, agent, call[2]!, body);
-    }
-
-    const credentialsRoute = pathname.match(/^\/gw\/machine-credentials\/([a-z0-9-]+)(?:\/([0-9a-f-]{36}))?$/);
-    if (credentialsRoute) {
-      if (!signHost) return json(res, 421, { error: "Use a configured signing host." });
-      if (req.headers.authorization !== undefined) return json(res, 403, { error: "Use owner wallet sign-in to manage machine credentials" });
-      const account = session.account(req);
-      if (!account) return json(res, 401, { error: "Sign in first" });
-      const agent = config.agents.find(a => a.name === credentialsRoute[1] && a.area === "treasury");
-      const access = agent && await resolveAgentAccess(account, agent);
-      if (!agent || !access?.canManage) return json(res, 403, { error: "Treasury management permission required" });
-      const id = credentialsRoute[2];
-      if (req.method === "GET" && !id) return json(res, 200, { credentials: machineCredentials.list(agent.name, agent.owner) });
-      if (req.method === "DELETE" && id) {
-        if (!machineCredentials.revoke(id, agent.name, agent.owner)) return json(res, 404, { error: "No such credential" });
-        return json(res, 200, { revoked: true });
-      }
-      if (req.method === "POST" && !id) {
-        const body = await readJson(req);
-        const authority = await resolveMachineAccess(account, agent);
-        if (!authority) return json(res, 403, { error: "Fresh established wallet ownership required. DAO machine delegation is not supported." });
-        const parsed = MachineIssue.safeParse(body);
-        if (!parsed.success) throw new BadRequest("Provide a label, read/prepare/execute-plan/sweep scopes and a lifetime of 60–86400 seconds.");
-        if (parsed.data.scopes.includes("prepare") && !mayCall(access, "rebalance")) return json(res, 403, { error: "Plan preparation permission required" });
-        if ((parsed.data.scopes.includes("execute-plan") || parsed.data.scopes.includes("sweep")) && !authority.access.canExecute) return json(res, 403, { error: "Execution permission required" });
-        return json(res, 201, machineCredentials.issue({ ...parsed.data, account, agent: agent.name, agentId: authority.agentId, owner: agent.owner, host: signHost }));
-      }
-      return json(res, 405, { error: "Use GET or POST on the collection, or DELETE on a credential" });
-    }
     if (["/gw/challenge", "/gw/session"].includes(pathname) && !signHost)
       return json(res, 421, { error: "Use a configured signing host." });
     if (pathname === "/gw/challenge" && req.method === "GET") return json(res, ...challengeAnswer(signHost!, mayChallenge(clientAddress(req))));

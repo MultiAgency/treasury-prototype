@@ -6,7 +6,7 @@ import { setTimeout } from "node:timers/promises";
 import { Near } from "near-kit";
 import lockfile from "proper-lockfile";
 import { api } from "../../src/api.js";
-import { rawKey } from "../../src/nep413.js";
+import { rawKey } from "../../shared/nep413.js";
 import { prepare, reconcileOwnerIntents } from "../../src/owner-intents.js";
 
 const [id, publicKey, barrier] = process.argv.slice(2) as [string, string, string];

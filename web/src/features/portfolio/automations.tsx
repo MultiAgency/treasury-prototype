@@ -9,13 +9,14 @@ import { useEffect } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 
 import { StrategyWorkflow } from "./strategy-workflow";
-import { OutcomeError } from "../../shared/outcome-error";
+import { OutcomeError, refusedBeforeSending } from "../../shared/outcome-error";
+import { useSendBlock } from "../../shared/send-block";
 import { amount, client, kindOf, swaps, useAttempt, useRun, usd } from "../../shared/lib";
 import { useCanCall } from "../../app/viewer";
 import { useAgent } from "../../app/agent-context";
 import { Badge, Button, Card, CardHeader, Details, Dot, Empty, ErrorBox, Loading, QueryError, Note, NotExecuted, Section, Spinner, StatusBadge, statusTone } from "../../shared/ui";
 
-export function Rebalance({ disabledReason, onExecute, onResult }: { disabledReason?: string; onExecute?: (planId: string) => void; onResult?: () => void }) {
+export function Rebalance({ disabledReason, onExecute, onResult, onRefused }: { disabledReason?: string; onExecute?: (planId: string) => void; onResult?: () => void; onRefused?: () => void }) {
   const canPreview = useCanCall("rebalance");
   const canExecute = useCanCall("executePlan");
   const executor = useAgent().setup.executor !== false;
@@ -26,6 +27,10 @@ export function Rebalance({ disabledReason, onExecute, onResult }: { disabledRea
   const execution = useRun(client.executePlan);
   const lastResult = execution.events.at(-1);
   useEffect(() => { if (lastResult) onResult?.(); }, [lastResult, onResult]);
+  // Refused before anything was sent: no confirmed plan remains to follow.
+  const refused = execution.state === "error" && refusedBeforeSending(execution.kind) && execution.events.length === 0;
+  useEffect(() => { if (refused) onRefused?.(); }, [refused, onRefused]);
+  const sendBlock = useSendBlock();
   const busy = preview.state === "running" || execution.state === "running";
   const plan = preview.events.find((e) => e.type === "plan");
   const saved = preview.events.find((e) => e.type === "saved");
@@ -108,6 +113,7 @@ export function Rebalance({ disabledReason, onExecute, onResult }: { disabledRea
         {rejected?.type === "rejected" && <NotExecuted problems={rejected.problems} again="Preview" />}
         <OutcomeError error={preview.error ?? execution.error} kind={preview.error ? preview.kind : execution.kind} />
         {blockReason && <p className="text-sm text-muted-foreground">{blockReason} {!hasGrant && executor && <Link to="/automations" className="underline">Review strategy authorization</Link>}</p>}
+        {!blockReason && sendBlock && <p className="text-sm text-muted-foreground">{sendBlock}</p>}
         {(executed || execution.error) && <Button asChild variant="outline" size="sm" className="h-auto max-w-full self-start whitespace-normal"><Link to="/activity">Review operation outcomes before another preview</Link></Button>}
       </div>
 
@@ -127,7 +133,7 @@ export function Rebalance({ disabledReason, onExecute, onResult }: { disabledRea
           <ConfirmButton
             path="executePlan"
             label={execution.state === "running" ? <><Spinner /> Executing</> : "Execute"}
-            disabled={busy || !saved || executed || blocked}
+            disabled={busy || !saved || executed || blocked || Boolean(sendBlock)}
             title="Execute the previewed rebalance on mainnet?"
             description="Runs the previewed swaps under the agent's grant, each requiring at least the minimum received shown. Swaps run in sequence with checks before each action. If execution stops, earlier completed actions remain."
             confirm="Execute swaps"
@@ -149,7 +155,7 @@ export function Rebalance({ disabledReason, onExecute, onResult }: { disabledRea
               <p>Valid until <time dateTime={saved.plan.expiresAt}>{new Date(saved.plan.expiresAt).toLocaleString()}</time></p>
             </section>}
             onConfirm={() => {
-              if (saved && !busy && !executed && !blocked && canExecute) {
+              if (saved && !busy && !executed && !blocked && !sendBlock && canExecute) {
                 // Selection follows explicit confirmation; it never establishes an operation outcome.
                 onExecute?.(saved.plan.id);
                 void execution.run({ planId: saved.plan.id });

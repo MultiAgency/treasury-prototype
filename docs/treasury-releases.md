@@ -79,3 +79,34 @@ The guided Treasury run is in the default build.
 - **Deep links:** `/demo#check`, `/demo#preview`, `/demo?plan=<id>#outcome`, `/#rebalance`, `/automations`,
   `/policy`, `/policy#grants` and `/activity#owner-actions` land on their controls once those render.
 - **Package:** built against `@multiagency/sdk` 0.0.1, the renamed contract package.
+
+## A7 — `2b0bf1bf…1a0a` (`@multiagency/sdk` 0.1.0 linked, oRPC beta.44)
+
+A new treasury opens on setup, not on "Access unavailable".
+- **Access wait:** after `POST /gw/agents`, **Continue** waits up to 30 s for the reserving account's access
+  to the new agent ("Starting your workspace…"), then opens it. Past the budget it opens with its own
+  **Check access again**. A sign-out or another account during the wait stops it where it is, with a plain
+  message; it never reserves again or signs anything. Access is never granted client-side.
+- **Package:** built against the linked `@multiagency/sdk` 0.1.0; its manifest records the SDK's contents
+  digest (`390c3ffc…0379`). Proto's packed 0.1.0 tarball (`7f68c9f1…d416`) differs only in `CHANGES.md`.
+- **Skill:** unchanged from A6 (`405d68c4…`); `/skill.md` is byte-identical.
+
+## A8 — `a3a089f9…3037` (`@multiagency/sdk` 0.1.0 linked, oRPC beta.44)
+
+A blocked treasury says why and stops offering sends it will refuse.
+- **Blocked summary:** the unresolved-operations card states how many operations block new sends, that a
+  submission attempted with no provider reference has an unknown outcome, what stays safe (reading,
+  previewing, checking outcomes), and that resolving it is a separate owner-authorized step this page
+  cannot clear, retry or replay.
+- **Send block:** while the latest unresolved read succeeds and reports operations, **Execute** and
+  **Shield** are not offered, with the reason beside them; **Preview** stays. A failed or pending read
+  leaves both as in A7. The server's refusal remains the authority.
+- **Refused before sending:** an execution refused as unresolved or busy, with no execution events, closes
+  the plan view and clears `?plan`; any other failure keeps it.
+- **Wording:** outcome checks name a "replacement operation" for Treasury agents ("replacement payment"
+  for Payables). After a sign-out or account switch during the access wait, the disabled button reads
+  **Continue**.
+- **Package:** the linked SDK's contents digest is `390c3ffc…0379`, the same as A7's input. Proto's
+  0.1.0 tarball (`7f68c9f1…d416`) differs only in `CHANGES.md`.
+- **Skill:** unchanged; `/skill.md` is byte-identical to A7's.
+

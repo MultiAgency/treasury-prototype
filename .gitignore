@@ -1,6 +1,7 @@
 .env
 .env.*
 !.env.example
+!.env.app.example
 .claude
 .agents
 research/
@@ -24,3 +25,5 @@ web/dist/
 # Self-service treasury registry and private per-owner state
 .treasuries/
 .machine-auth/
+# The Treasury app's private records: request journal and agent token hashes.
+.app/

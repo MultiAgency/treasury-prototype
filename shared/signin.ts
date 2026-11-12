@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { Near } from "near-kit";
-import { mainnet } from "./chain.js";
+import { mainnet } from "./near.js";
 import { BadRequest } from "./http.js";
 import { nep413Hash, signatureBytes, verifyEd25519 } from "./nep413.js";
 

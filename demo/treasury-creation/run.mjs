@@ -12,8 +12,8 @@ import { openProto } from '../proto-snapshot.mjs';
 const here = import.meta.dirname, repo = resolve(here, '../..');
 const { values: options } = parseArgs({ options: {
   proto: { type: 'string', default: process.env.PROTO_DIR ?? resolve(repo, '../proto') },
-  release: { type: 'string', default: join(repo, '.test-artifacts/releases/treasury-a6') },
-  previous: { type: 'string', default: join(repo, '.test-artifacts/releases/treasury-a5') },
+  release: { type: 'string', default: join(repo, '.test-artifacts/releases/treasury-a7') },
+  previous: { type: 'string', default: join(repo, '.test-artifacts/releases/treasury-a6') },
   headed: { type: 'boolean', default: false },
 } });
 const source = openProto(options.proto), { pinned } = source;

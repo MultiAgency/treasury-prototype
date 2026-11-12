@@ -42,6 +42,7 @@ function rpcMalformed(method, value) {
 const rpcBody = (values, method) => rpcAnswer(method, rpcValue(values, method));
 
 /** Server-sent events for a streamed procedure, each event checked and encoded like a real answer. */
-const rpcEvents = (method, events) => events.map(event => `data: ${JSON.stringify(rpcAnswer(method, event))}\n\n`).join('');
+// Ends with `event: close`, as oRPC's server does: SDK 0.4.0's client reads a stream that stops without it as lost (unknown).
+const rpcEvents = (method, events) => events.map(event => `data: ${JSON.stringify(rpcAnswer(method, event))}\n\n`).join('') + 'event: close\n\n';
 
 module.exports = { rpcValue, rpcAnswer, rpcBody, rpcEvents, rpcMalformed, UNAVAILABLE };

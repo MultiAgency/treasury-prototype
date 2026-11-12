@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import type { IncomingMessage } from "node:http";
 import { test } from "node:test";
-import { readJson } from "../src/http.js";
+import { readJson } from "../shared/http.js";
 
 const request = (chunks: Buffer[]) => ({ async *[Symbol.asyncIterator]() { yield* chunks; } }) as IncomingMessage;
 

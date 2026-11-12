@@ -1,4 +1,7 @@
 allowBuilds:
   esbuild: false
 # Verification shares installed dependencies read-only; install explicitly before source capture.
+minimumReleaseAgeExclude:
+  - '@multiagency/sdk@0.4.0'
+  - '@multiagency/sdk@0.5.8'
 verifyDepsBeforeRun: false

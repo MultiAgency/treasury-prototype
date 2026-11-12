@@ -41,3 +41,12 @@ test("invalid JSON and malformed capability fields fail closed", async () => {
   await assert.rejects(readGateway(new Response("<html>failure</html>", { status: 503 }), { hostname: "localhost", protocol: "http:", pathname: "/" }));
   await assert.rejects(readGateway(new Response("<html>fallback</html>"), { hostname: "localhost", protocol: "https:", pathname: "/" }));
 });
+
+test("payee entries are http(s) URLs or the discovery is refused", async () => {
+  for (const invoices of ["javascript:alert(1)", "ftp://invoices.example"]) {
+    await assert.rejects(readGateway(response({ ...shared, invoices }), location), /gateway/i);
+    await assert.rejects(readGateway(response({ ...shared, agents: [{ name: "treasury", owner: "alice.near", dao: false, invoices }] }), location), /gateway/i);
+  }
+  await assert.rejects(readGateway(response({ ...shared, invoices: "not a url" }), location));
+  assert.equal((await readGateway(response({ ...shared, invoices: "https://invoices.example/" }), location))?.invoices, "https://invoices.example/");
+});

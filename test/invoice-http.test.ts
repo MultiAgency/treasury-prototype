@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { after, before, test } from "node:test";
 import { api } from "../src/api.js";
-import { sessionToken } from "../src/signin.js";
+import { sessionToken } from "../shared/signin.js";
 import { ASSETS, payoutPolicy } from "../src/policy.js";
 import { getInvoice, invoiceId, prepareInvoice, noteRevision, claimInvoiceSubmission } from "../src/invoice-store.js";
 import { mayCall } from "../src/gateway/allowlist.js";

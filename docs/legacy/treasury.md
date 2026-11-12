@@ -112,7 +112,7 @@ These are catalog targets, not established guarantees. Evidence stages describe 
 ## Run-log adapter and export (offline-tested)
 
 `src/agui.ts` projects a tick and its agent-scoped journal history into a private recording, validated
-against the pinned `@ag-ui/core` 1.0.2 event schemas. New exports use envelope version 3 and declare
+against the pinned `@ag-ui/core` 1.0.3 event schemas; recordings stamped 1.0.2 stay readable. New exports use envelope version 3 and declare
 AG-UI protocol 1.0 separately from the SDK version. Versions 1/2 remain readable as legacy archives;
 they are not retroactively certified as conforming event sequences.
 It imports evidence types only and makes no provider calls, writes, or money decisions.

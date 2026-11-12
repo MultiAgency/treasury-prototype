@@ -3,12 +3,6 @@ import { writeFileSync } from 'node:fs';
 import { environment } from './environment.mjs';
 import { browserContext } from './wallet.mjs';
 import { OWNER, PAYEE } from './provider.mjs';
-import { createORPCClient } from '@orpc/client';
-import { RPCLink } from '@orpc/client/fetch';
-import { request as httpsRequest } from 'node:https';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { join, resolve } from 'node:path';
 
 async function rpc(page, agent, method, input) {
   return page.evaluate(async ({ agent, method, input }) => {
@@ -42,50 +36,6 @@ async function scenario(browser, info, run, options = {}) {
     for (const wallet of wallets) expect(wallet.unexpected).toEqual([]);
   }
 }
-
-test('outside agent prepares its own swaps and executes the exact plan through Treasury', async ({ browser }, info) => {
-  await scenario(browser, info, async (stack, login) => {
-    const { page } = await login(PAYEE, '/a/portfolio/');
-    const issued = await page.evaluate(async () => {
-      const response = await fetch('/gw/machine-credentials/portfolio', { method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ label: 'offline external strategy', scopes: ['read', 'prepare', 'execute-plan'], ttlSeconds: 60 }) });
-      if (!response.ok) throw new Error(`Issuance failed: ${response.status}`);
-      return response.json();
-    });
-    // A separate Node client, with no browser cookies. Only this fixture accepts its local self-signed TLS certificate.
-    const localFetch = (url, options) => new Promise((resolve, reject) => {
-      const req = httpsRequest(url, { method: options.method, headers: Object.fromEntries(new Headers(options.headers)), rejectUnauthorized: false }, res => {
-        const chunks = []; res.on('data', chunk => chunks.push(chunk));
-        res.on('end', () => resolve(new Response(Buffer.concat(chunks), { status: res.statusCode, headers: res.headers })));
-      });
-      req.on('error', reject); req.end(options.body);
-    });
-    const client = createORPCClient(new RPCLink({ origin: stack.dashboard, url: '/machine/v1/a/portfolio/rpc',
-      headers: { authorization: `Bearer ${issued.token}` }, fetch: localFetch }));
-    expect((await client.instance()).agentId).toBe(stack.portfolio.id);
-    const chosen = { from: 'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1', to: 'nep141:wrap.near', amount: '1000000' };
-    const inputFile = info.outputPath('external-swaps.json');
-    writeFileSync(inputFile, JSON.stringify({ swaps: [chosen] }));
-    const cli = async (...args) => (await promisify(execFile)(process.execPath,
-      [resolve('skills/treasury/scripts/treasury.mjs'), ...args], { env: { ...process.env,
-        TREASURY_URL: stack.dashboard, TREASURY_NAME: 'portfolio', TREASURY_MACHINE_TOKEN: issued.token,
-        NODE_EXTRA_CA_CERTS: join(stack.directory, 'localhost.crt') }, timeout: 30_000 })).stdout;
-    const plan = JSON.parse(await cli('prepare', inputFile));
-    expect(plan.source).toBe('external'); expect(plan.actions[0]).toMatchObject(chosen);
-    expect(stack.portfolio.swaps).toHaveLength(0);
-    const events = (await cli('execute', plan.id)).trim().split('\n').map(line => JSON.parse(line));
-    expect(events).toHaveLength(1); expect(events[0]).toMatchObject({ type: 'action', status: 'SUCCESS' });
-    expect(stack.portfolio.swaps).toHaveLength(1);
-    expect(stack.portfolio.swaps[0].body).toMatchObject({ origin_asset: chosen.from, destination_asset: chosen.to, amount: chosen.amount, min_amount_out: plan.actions[0].minAmountOut });
-    const again = []; for await (const event of await client.executePlan({ planId: plan.id })) again.push(event);
-    expect(again[0].type).toBe('rejected'); expect(stack.portfolio.swaps).toHaveLength(1);
-    const activity = await client.activity();
-    expect(activity.some(op => op.planId === plan.id && op.status === 'SUCCESS')).toBe(true);
-    await page.evaluate(async id => { const response = await fetch(`/gw/machine-credentials/portfolio/${id}`, { method: 'DELETE' }); if (!response.ok) throw new Error('Revoke failed'); }, issued.credential.id);
-    await expect(client.instance()).rejects.toThrow();
-    expect(stack.portfolio.swaps).toHaveLength(1);
-  });
-});
 
 test('cross-agent navigation keeps identity and gateway permissions isolated', async ({ browser }, info) => {
   await scenario(browser, info, async (stack, login) => {

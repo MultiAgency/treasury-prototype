@@ -37,15 +37,34 @@ test("dashboard Dockerfile copies every source needed for its web build", { time
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("every image refuses a development SDK link and copies local tarball dependencies before installing", () => {
+
+test("images pin the legacy SDK and the verified portable order-consumer artifact without working-tree links", () => {
   const root = fileURLToPath(new URL("../", import.meta.url));
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  const local = Object.values({ ...manifest.dependencies, ...manifest.devDependencies } as Record<string, string>)
-    .flatMap(spec => spec.startsWith("file:") ? [spec.slice("file:".length).split("/")[0]!] : []);
+  const specs = { ...manifest.dependencies, ...manifest.devDependencies } as Record<string, string>;
+  assert.equal(specs["@multiagency/sdk"], "0.4.0", "legacy consumers keep their existing exact published SDK pin");
+  const candidate = "vendor/multiagency-sdk-0.5.8.tgz";
+  assert.equal(specs["@multiagency/treasury-app-sdk"], `file:${candidate}`, "the unpublished candidate is a portable vendored file, never an absolute checkout path");
+  assert.equal(createHash("sha256").update(readFileSync(join(root, candidate))).digest("hex"),
+    "8559e5fb37a576ea1a99924d0bfc7223aee2e8965b8ea4a3b24cb1d8530def50", "the frozen consumer build is exactly the verified handoff artifact");
+  assert.equal(readFileSync(join(root, `${candidate}.sha256`), "utf8").trim(),
+    "8559e5fb37a576ea1a99924d0bfc7223aee2e8965b8ea4a3b24cb1d8530def50  multiagency-sdk-0.5.8.tgz", "the portable checksum sidecar names these exact bytes");
+  const packed = spawnSync("tar", ["-xOf", join(root, candidate), "package/provenance.json"], { encoding: "utf8" });
+  assert.equal(packed.status, 0, `${packed.error ?? ""}\n${packed.stderr}`);
+  const provenance = JSON.parse(packed.stdout);
+  assert.equal(provenance.name, "@multiagency/sdk");
+  assert.equal(provenance.version, "0.5.8");
+  assert.equal(provenance.sourceHead, "8b2da58fdc72bdcbb50e667ac18f10db54a05066", "source is the reviewed platform commit");
+  assert.equal(provenance.snapshot.runDigest, "a575d2ea766269a9c1fad37ae2f315afe88a68065caff05c1406c270c1e34063", "source snapshot matches the frozen handoff");
+  assert.equal(provenance.snapshot.overlayDiffSha256, null);
+  assert.deepEqual(provenance.dirtyPaths, []);
+  assert.deepEqual(provenance.sourcesDirty, []);
+  for (const [name, spec] of Object.entries(specs)) if (name !== "@multiagency/treasury-app-sdk")
+    assert.ok(!/^(link|file|portal):/.test(spec), `${name} must not be a working-tree dependency`);
   for (const name of ["Dockerfile", "Dockerfile.dashboard", "Dockerfile.legacy-invoices"]) {
-    const [beforeInstall] = readFileSync(join(root, name), "utf8").split(/^RUN pnpm install/m);
-    assert.match(beforeInstall!, /^RUN node scripts\/release-mode\.mjs$/m, `${name} must refuse a development link before pnpm install`);
-    const copied = beforeInstall!.split("\n").filter(line => line.startsWith("COPY ")).flatMap(line => line.slice(5).trim().split(/\s+/).slice(0, -1));
-    for (const directory of local) assert.ok(copied.includes(directory), `${name} must copy ${directory} before pnpm install`);
+    const dockerfile = readFileSync(join(root, name), "utf8");
+    assert.doesNotMatch(dockerfile, /^COPY --from=/m, `${name} must build from this repository alone`);
+    const artifactCopy = dockerfile.indexOf(`COPY ${candidate}`), install = dockerfile.indexOf("RUN pnpm install");
+    assert.ok(artifactCopy >= 0 && install >= 0 && artifactCopy < install, `${name} copies the verified artifact before installing`);
   }
 });

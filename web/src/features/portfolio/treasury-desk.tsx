@@ -31,7 +31,7 @@ export function TreasuryDesk() {
     <Allocation data={data} />
     <TreasuryLimits />
     <section id="rebalance" aria-label="Quoted rebalance" className="scroll-mt-8">
-      {swaps(data) ? <Rebalance onExecute={followPlan} onResult={refreshResult} /> : <p>The reported policy does not allow swaps. <Button asChild variant="outline"><Link to="/policy">Review policy</Link></Button>.</p>}
+      {swaps(data) ? <Rebalance onExecute={followPlan} onResult={refreshResult} onRefused={stopFollowing} /> : <p>The reported policy does not allow swaps. <Button asChild variant="outline"><Link to="/policy">Review policy</Link></Button>.</p>}
     </section>
     {followed && <PlanOutcome key={followed.planId} selected={followed} onStop={stopFollowing} />}
     <nav aria-label="Treasury tools" className="flex flex-wrap gap-3">

@@ -84,17 +84,46 @@ Owner actions still require the owner's verified signature, obtained through the
 when it owns the agent. Historical records retain `operator` as the label for a manually triggered run.
 
 **Machine credential**:
-A revocable, expiring bearer credential bound to one Treasury workspace, signing host and provider
-agent ID. Only an established wallet owner can issue one after fresh chain/provider ownership checks.
-DAO machine delegation is refused until a verified DAO consent mechanism exists. Every request
-requires fresh ownership evidence; failed reads, missing agents or changed identities refuse access.
-The `read`, `prepare`, `execute-plan` and `sweep` scopes are independent and expose a limited procedure
-list. They delegate access to the existing executor, not a new provider grant or an owner signature.
-Execution uses the existing dispatch path. Secrets are returned once, stored only as hashes, and
-stripped before forwarding. Private records and access attribution live in `.machine-auth/`.
-New storage-version-2 records bind the agent ID; earlier experimental records remain listable and
-revocable but cannot authenticate. No conversion of money state is needed. This is offline-tested
-candidate behavior, not deployed.
+A revocable, expiring bearer credential (`tmc_…`) that the owner issues on the platform for one Treasury agent, with
+independent `read`, `prepare`, `execute-plan` and `sweep` scopes. The packaged Treasury skill's helper uses it. On the
+platform's SDK 0.4.0 server (not deployed), `execute-plan` also needs the owner's live grant to bind the saved strategy
+(`treasury:<digest suffix>`). The platform retires this route after Treasury moves to the app scope. Treasury's own
+copy of the route was removed from this repository on 2026-11-03. Production still serves an earlier version until
+redeployed, and its `.machine-auth/` state is archived, not converted (docs/machine-api.md).
+
+**Treasury app (candidate)**:
+Treasury acting as an app on the platform's `/apps/v1`, under the owner's signed consent (`read` + `treasury`
+by default; `treasury-execute` only by the owner's explicit choice). Outside agents propose swaps through it, the owner
+signs each proposal's exact terms in their wallet, and the owner executes it. Its relay (`app/treasury-app.ts`) records
+each request before the platform sees it, resends only the identical request after a lost answer, relays only the
+platform's exact approval text, and reads a lost execution back instead of retrying. Exit codes: 0 ok, 2 nothing sent,
+3 unknown, 4 partial. It decides nothing about money; the platform enforces consent, terms, policy, grant and strategy.
+Its own server (`app/server.ts`, `pnpm app`) signs the owner in with their wallet on the app's host, under its own
+session cookie, because the platform host has no owner sign-in; it holds no money state and starts no executor.
+The owner issues outside agents **agent tokens** (`tat_…`, `app/runtime-tokens.ts`): `read` and/or `propose`, bound
+to this host, one Organization, one agent, its provider agent ID and the issuing owner, expiring in 60 s to 24 h and
+revocable by that owner, stored only as hashes under `.app/tokens/`. No token executes anything. Every agent call
+re-reads the agent's owner, provider ID and the app's live consent from the platform, and refuses if any changed or
+the platform doesn't answer. The owner **connects** an agent in the app (`/app/connect`): the app builds the
+consent text with the SDK's `consentMessage` (`read` + `treasury`; `treasury-execute` only when the owner ticks it;
+1 to 90 days, default 30) for the platform's host, and submits only a text it prepared for that owner, within ten
+minutes; with no answer, the same signed body can be sent again. The signed-in owner reads each proposal with the platform's exact approve and reject
+texts and its signing host as the NEP-413 recipient (`/app/proposals`), relays the wallet's signature over one of them,
+and presses Execute: one attempt, a lost answer read back. The page for this is web/'s second entry, `proposals.html`
+(`web/src/proposals/`, its own root without the gateway's Shell), served at the app's `/`: it shows each swap and the
+platform's text verbatim, has the wallet sign exactly that text for the platform's host, and asks for a confirmation
+before Execute. After an execution with no answer, or one that answers unknown, it offers no Execute while the proposal
+still reads `approved`: the platform re-quotes before it claims, so that state proves nothing. Its Agent tokens card
+issues and revokes the outside agents' tokens, showing each secret once. Outside agents use the skill's dependency-free helper
+`skills/treasury/scripts/treasury-app.mjs` (read, propose, withdraw; exits 0/2/3/4, never 1). Offline-tested (unit and browser), not deployed
+(coordination/treasury-app-move.md).
+Resting limit orders additionally require the host capability `treasury-limit-orders-v1` and a separate
+`treasury` + `treasury-orders` consent. Each order uses the SDK's exact owner signing text (or a DAO vote);
+the app saves immutable create requests and durable one-attempt placement/cancellation claims. Resting,
+partial fills and cancellation acceptance are not completion; only a closed fill with final completed payout is.
+The app consumer uses the verified local 0.5.8 SDK alias, while legacy clients retain 0.4.0. This path is
+offline-tested only; production provider order routes and live enforcement remain unverified.
+See docs/limit-orders-consumer.md for state preservation and release gates.
 
 **Portfolio**:
 The historical product-facing label for the Treasury area in the shared workspace.

@@ -7,8 +7,8 @@ signatures are involved.
 
 ```sh
 node demo/treasury-creation/run.mjs --proto <Proto stack snapshot or checkout>
-# options: --release <Treasury release dir> (default .test-artifacts/releases/treasury-a6),
-#          --previous <release dir> (release B for Proto's release server), --headed
+# options: --release <Treasury release dir> (default .test-artifacts/releases/treasury-a7),
+#          --previous <release dir> (release B for Proto's release server; default treasury-a6), --headed
 ```
 
 The snapshot is verified and copied as for the [strategy recipe](../treasury-strategy/README.md).
@@ -40,8 +40,24 @@ release A6 (`13ad983b…8d1a`), harness overlay `50033e22f95d…`, Node 24.22.0.
   hosted agent closed until its server first answers (by design), and Treasury loads the workspace right
   after the reservation, then keeps that first answer. The run records the identity reads (no access at
   first, access about 15 s later) and continues through the page's own **Check access again**.
-  Agreed fix (Proto, after the review checkpoint): `POST /gw/agents` waits, within a bounded budget, for
-  the hosted agent's first owner answer before replying, keeping fail-closed access. Proto will also take
+
+**2026-10-20 UTC**, `run-jaycOG`, on Proto's release candidate snapshot
+`bf59054efadbb6a5cdf084e4a354d18421a4ec9d8b37c098e0704425bc2b04ad` (`unchangedAfterRun: true`) with a
+Treasury frontend built from source after A6 (`36826956…ed5b`, not a frozen release), the same harness
+overlay, Node 24.22.0. Result **as expected**: 13 of 13 checks pass.
+
+- **Change:** after `POST /gw/agents`, **Continue** waits up to 30 s for the owner's access to the new agent
+  (shown as "Starting your workspace…") before opening it; past that budget the workspace opens with its
+  own recheck. Access stays fail-closed: the page only waits, it grants nothing.
+- **Observed:** the agent's access arrived about 1 s after the reservation; the workspace opened directly
+  on setup, with no refusal shown.
+**2026-10-20 UTC**, `run-v66Btv`, on the same snapshot (`unchangedAfterRun: true`) with frozen release A7
+(`2b0bf1bf…1a0a`). Result **as expected**: 13 of 13. A7 also binds the wait to the account that reserved
+the agent: a sign-out or another account stops it without opening the workspace. The offline fixtures
+`hostedSetup_{access,signout,switch,timeout}` cover each outcome; the sign-out and switch cases fail on the
+earlier build, which opened the workspace regardless.
+
+- Proto's gateway-side fix (waiting before replying) is no longer needed for this run. Proto will still take
   the `ownerApp.setupAreas` option upstream, and this run then drops its overlay.
 
 Not covered: a DAO-owned treasury, and the policy, grant, strategy and funding steps after creation.

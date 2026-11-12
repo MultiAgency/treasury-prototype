@@ -7,7 +7,7 @@ import { router } from "./router.js";
 import { executes, saveEnv } from "./env.js";
 import { acquireExecutorLease } from "./executor-lease.js";
 import { createExecutorLifecycle } from "./executor-lifecycle.js";
-import { crossSite, serveStatic } from "./http.js";
+import { crossSite, serveStatic } from "../shared/http.js";
 import { resumeOwnerIntents, setAgentCreationHandler } from "./owner-intents.js";
 import { closeWorkOrders, resumeWorkOrders } from "./work-order-pool.js";
 

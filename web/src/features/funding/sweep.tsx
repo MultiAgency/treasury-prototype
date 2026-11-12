@@ -7,6 +7,7 @@ import { useCanCall } from "../../app/viewer";
 import { useAgent } from "../../app/agent-context";
 import { Button, Card, CardHeader, Dot, Note, Spinner, StatusBadge } from "../../shared/ui";
 import { OutcomeError } from "../../shared/outcome-error";
+import { useSendBlock } from "../../shared/send-block";
 
 export function Sweep() {
   const canSweep = useCanCall("sweep");
@@ -18,6 +19,8 @@ export function Sweep() {
   const plan = events.find((e) => e.type === "plan");
   const shields = events.filter((e) => e.type === "shield");
   const exposed = plan?.exposed ?? [];
+  const sendBlock = useSendBlock();
+  const canPreview = canSweep && executor && canShield;
 
   return (
     <Card>
@@ -43,21 +46,22 @@ export function Sweep() {
             </div>
           );
         })}
+        {canPreview && sendBlock && <Note>{sendBlock}</Note>}
         {!canShield && <Note>Shielding requires a treasury grant. Payout and invoice grants cannot shield funds.</Note>}
         <OutcomeError error={error} kind={kind} />
       </div>
       <div className="mt-auto flex justify-end gap-3">
-        <Button variant="outline" size="sm" disabled={running || !canSweep || !executor || !canShield} onClick={() => run({ execute: false })}>
+        <Button variant="outline" size="sm" disabled={running || !canPreview} onClick={() => run({ execute: false })}>
           Preview
         </Button>
         <ConfirmButton
           path="sweep"
           label={running && input?.execute ? <><Spinner /> Shielding</> : "Shield"}
-          disabled={!canSweep || exposed.length === 0 || running || input?.execute || !executor || !canShield}
+          disabled={!canPreview || exposed.length === 0 || running || input?.execute || Boolean(sendBlock)}
           title="Shield these managed balances?"
           description="Moves the listed public USDC, wNEAR and ETH balances into the agent's confidential balance on mainnet. It stays in the account, out of public view."
           confirm="Shield"
-          onConfirm={() => run({ execute: true })}
+          onConfirm={() => { if (!sendBlock) void run({ execute: true }); }}
         />
       </div>
     </Card>

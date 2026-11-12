@@ -37,7 +37,7 @@ source and fixture code, not deployed settings or real credentials.
 
 ## Existing experimental contract
 
-[Machine interface reference](machine-api.md) describes the candidate endpoints:
+These were the candidate endpoints, removed from this repository on 2026-11-03 ([machine interface](machine-api.md)):
 
 - Owner session management: `GET/POST /gw/machine-credentials/<name>` and
   `DELETE /gw/machine-credentials/<name>/<id>`.
@@ -111,8 +111,9 @@ cases before the UI draft. The skill helper's real-stack case prepares chosen sw
 saved plan, inspects its recorded operation, rejects repeat execution and confirms revoked access.
 The skill passed its validator. These results do not certify the draft UI or Proto integration.
 
-Relevant tests: `test/machine-auth.test.ts`, `test/gateway-denial.test.ts`,
-`test/gateway-canonical.test.ts`, `test/external-plan.test.ts`, and `test/e2e/workspace.spec.mjs`.
+Relevant tests at the time: `test/machine-auth.test.ts`, the machine cases in `test/gateway-denial.test.ts` and
+`test/gateway-canonical.test.ts`, and the outside-agent scenario in `test/e2e/workspace.spec.mjs`. All were removed with
+the route on 2026-11-03; `test/external-plan.test.ts` remains.
 
 Shared acceptance should cover owner/non-owner/DAO boundaries; cross-host and cross-agent isolation;
 read-only defaults and explicit execution consent; no issuance on navigation/reload/cancellation;

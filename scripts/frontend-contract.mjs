@@ -3,7 +3,6 @@
 // module, and every procedure its import graph can call must belong to a capability that
 // web/contract.json declares. Capabilities come from Proto's contract package; nothing is copied here.
 // Compatibility is not authorization: the gateway and agent still authorize every call.
-import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -11,7 +10,6 @@ import { fileURLToPath } from 'node:url';
 import { mayCall, ownerCapabilities } from '@multiagency/sdk';
 import { SyntaxKind } from 'typescript/unstable/ast';
 import { API } from 'typescript/unstable/sync';
-import { sdkMode } from './release-mode.mjs';
 
 const repo = fileURLToPath(new URL('../', import.meta.url)), web = join(repo, 'web');
 /**
@@ -48,25 +46,6 @@ function imported(file) {
 const propertyName = node => node.name?.kind === SyntaxKind.Identifier || node.name?.kind === SyntaxKind.StringLiteral ? node.name.text : null;
 const failures = [];
 const fail = message => failures.push(message);
-
-// 0. A release candidate's SDK is the vendored tarball: its sha256 file, lockfile entry and provenance.
-// A development link is checked by the steps below only, against the linked SDK.
-let sdk;
-try { sdk = sdkMode(); } catch (error) { fail(error.message); }
-if (sdk?.mode === 'release') {
-  const { tarball } = sdk;
-  const [recorded] = readFileSync(join(repo, `${tarball}.sha256`), 'utf8').trim().split(/\s+/);
-  const actual = createHash('sha256').update(readFileSync(join(repo, tarball))).digest('hex');
-  if (recorded !== actual) fail(`${tarball} sha256 ${actual} does not match its recorded ${recorded}`);
-  const provenance = path => JSON.stringify(JSON.parse(readFileSync(path, 'utf8')));
-  if (provenance(join(repo, tarball.replace(/\.tgz$/, '.provenance.json'))) !== provenance(join(repo, 'node_modules/@multiagency/sdk/provenance.json')))
-    fail('The installed contract package provenance differs from the vendored tarball; reinstall it');
-  const lock = readFileSync(join(repo, 'pnpm-lock.yaml'), 'utf8');
-  const resolution = lock.split('\n').find(line => line.trim().startsWith('resolution: {integrity: ') && line.endsWith(`tarball: file:${tarball}}`));
-  const locked = resolution?.match(/integrity: (sha512-[^,]+),/)?.[1];
-  const integrity = `sha512-${createHash('sha512').update(readFileSync(join(repo, tarball))).digest('base64')}`;
-  if (locked !== integrity) fail(`pnpm-lock.yaml's integrity for ${tarball} is ${locked ?? 'missing'}, not the tarball's ${integrity}`);
-}
 
 // 1. The manifest names only known capabilities, as P2 manifest v1 defines it.
 const manifest = JSON.parse(readFileSync(join(web, 'contract.json'), 'utf8'));
@@ -110,8 +89,9 @@ for (const path of app) if (shared.test(path)) fail(`Default build bundles a sha
 const config = join(web, '.treasury-frontend-contract.tsconfig.json'), clientFile = join(web, 'src/shared/client.ts');
 const alias = 'export type ClientProcedure = OwnerProcedure;';
 const declared = `export type ClientProcedure = ${procedures.map(procedure => JSON.stringify(procedure)).join(' | ') || 'never'};`;
-// Only this build's graph: main.tsx and what it imports, with `@legacy` resolved as the build resolves it.
-const tsconfig = JSON.stringify({ extends: './tsconfig.json', files: ['./src/main.tsx', './src/env.d.ts'], include: [],
+// Only this build's graph: its two entries (main.tsx, and proposals/main.tsx for the Treasury app's page) and what they
+// import, with `@legacy` resolved as the build resolves it.
+const tsconfig = JSON.stringify({ extends: './tsconfig.json', files: ['./src/main.tsx', './src/proposals/main.tsx', './src/env.d.ts'], include: [],
   compilerOptions: { paths: { '@/*': ['./src/*'], '@legacy': ['./src/legacy/absent.ts'] } } });
 let narrowed = false;
 const api = new API({ cwd: repo, fs: {

@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { generateKey, Near, type PrivateKey } from "near-kit";
 import { mayCall } from "../src/gateway/allowlist.js";
 import { childEnv, hostOf, loadConfig } from "../src/gateway/config.js";
-import { BadRequest } from "../src/http.js";
-import { CHALLENGE_TTL_MS, issueChallenge, type KeyLookup, parseSignIn, SESSION_TTL_MS, sessionAccount, sessions, sessionToken, verifySignIn } from "../src/signin.js";
+import { BadRequest } from "../shared/http.js";
+import { CHALLENGE_TTL_MS, issueChallenge, type KeyLookup, parseSignIn, SESSION_TTL_MS, sessionAccount, sessions, sessionToken, verifySignIn } from "../shared/signin.js";
 import { accessOf } from "../src/gateway/roles.js";
 import { council } from "../src/chain.js";
 import { signingHost } from "../src/gateway/canonical-host.js";
@@ -66,7 +66,7 @@ test("a wallet that signs a callback URL on this site signs in; one elsewhere is
 });
 
 test("a wallet that signs the page's URL as NEP-413 callbackUrl verifies with it (real sign-in, 2026-10-12)", async () => {
-  const { nep413Hash, signatureBytes, verifyEd25519 } = await import("../src/nep413.js");
+  const { nep413Hash, signatureBytes, verifyEd25519 } = await import("../shared/nep413.js");
   const key = "ed25519:7g2kKQYuRXPVhn8HTLiRdBfJTF1fd7UZ8xASAcrht3nk";
   const signature = signatureBytes("uu24iawRTfSXfM4A5gFcO4XRt0l9ZaVJw8UI7ARMFSV0kuTDxAarmhliRjJBDD7UwD3+sKroBOX75NmeuihNDw==");
   const nonce = Buffer.from("m8M+4IBj1wrjbIOG8NW7WNWNzJcfOzWL4dMw0FUN06s=", "base64");

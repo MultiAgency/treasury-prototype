@@ -1,15 +1,9 @@
+import { gatewayDiscovery } from "@multiagency/sdk";
 import { z } from "zod";
 
-const access = z.object({ canSign: z.boolean(), canPropose: z.boolean(), canVote: z.boolean(), canExecute: z.boolean(), canManage: z.boolean() });
-const gatewaySchema = z.object({
-  agents: z.array(z.object({ name: z.string().regex(/^[a-z0-9-]{1,32}$/), owner: z.string().min(1), dao: z.boolean(), area: z.enum(["treasury", "payables"]).optional() })),
-  invoices: z.string().nullable(),
-  viewer: z.object({ account: z.string().min(1), access: z.record(z.string(), access) }).nullable(),
-  selfServiceTreasury: z.boolean().optional(),
-  selfService: z.boolean().optional(),
-  setupAreas: z.array(z.enum(["treasury", "payables"])).optional(),
-});
-export type Gateway = z.infer<typeof gatewaySchema>;
+/** Proto's `GET /gw/me` contract, plus the flag Treasury's retained standalone gateway still sends. */
+const gatewaySchema = gatewayDiscovery.extend({ selfServiceTreasury: z.boolean().optional() });
+export type Gateway = z.output<typeof gatewaySchema>;
 export type GatewayAgent = Gateway["agents"][number];
 
 /** A missing/malformed hosted gateway never grants the trusted local-server view. */

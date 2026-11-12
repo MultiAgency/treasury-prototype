@@ -77,9 +77,10 @@ pnpm review:treasury       # Isolated UI review; retain screenshots, traces and 
 pnpm evidence:check
 ```
 
-The web app builds against Proto's published owner contract, `@multiagency/sdk`, not
-the copied backend router. The contract is vendored as a tarball in `vendor/`, with its sha256 and
-provenance.
+The web app builds against the platform's owner contract, `@multiagency/sdk`, not the copied backend
+router. It is pinned to the published 0.4.0 from the npm registry (lockfile integrity
+`sha512-5Z90i0ru…`), so every image builds from this repository alone. A packaged frontend's
+`manifest.json` records the SDK contents it was built against.
 - **Calls:** every call goes through its `ownerClient`, which validates answers against the published
   output schemas and never retries.
 - **Recovery:** the client's typed failure kinds decide what the UI does. A lost or unverifiable
@@ -87,7 +88,7 @@ provenance.
   the observations.
 - **Manifest:** the default build ships `contract.json` (P2 owner-app manifest v1), naming the
   platform capabilities it needs.
-- **`pnpm check:frontend`** checks the contract pin and the build's actual module graph. That graph
+- **`pnpm check:frontend`** checks the build's actual module graph. That graph
   must contain no shared Payables or Portfolio module and no file from `src/`. The check also
   type-checks the graph against only the declared procedures.
 - **Browser fixtures** pass through the same published schemas and oRPC's encoder. Runtime compatibility grants no
@@ -122,19 +123,27 @@ Deploys, restarts and live money actions are the owner's. There must be exactly 
 agent. The executor lease and money lock coordinate one host; they are not distributed fencing.
 Preserve all agent state before any executor move, including inherited record directories.
 
-The [machine interface v1](docs/machine-api.md) is an offline-tested candidate for scoped,
-expiring and revocable access to the existing Treasury executor. It supports reads, planning of
-externally chosen swaps and separately delegated plan/sweep execution for established
-wallet owners; it is not deployed. A [Treasury skill](skills/treasury/SKILL.md) packages the workflow
-and client helper; its prepare/execute/evidence/revoke flow is tested against an offline simulated provider.
-DAO machine delegation is refused until a verified DAO approval mechanism exists.
+The **Treasury app** (`app/`, `pnpm app`; candidate, offline-tested, not deployed) replaces it for outside agents: the
+owner connects Treasury to the platform's `/apps/v1` under a signed consent, issues agents read/propose tokens, and
+approves each proposal's exact terms in their wallet before executing it on the app's proposals page. See
+`CONTEXT.md` ("Treasury app") and `coordination/treasury-app-move.md`.
+
+Treasury's own [machine interface v1](docs/machine-api.md) was removed from this repository on 2026-11-03.
+Production still serves an earlier version of it (deployment `95451b7a`, observed 2026-11-03) until the owner
+redeploys; preserve and archive `.machine-auth/`. Outside agents move to the platform's app scope
+(`coordination/treasury-app-move.md`). Until then the [Treasury skill](skills/treasury/SKILL.md) targets the
+platform's machine route; its helper is tested against an offline simulated provider.
+On the platform's machine route (the `@multiagency/sdk` 0.4.0 server, not deployed), executing a plan also needs the
+owner's [strategy-bound grant](docs/machine-api.md#strategy-bound-grant-before-plan-execution): the owner signs a grant
+for the saved strategy before any machine-route execution, and again after saving a different strategy.
 
 ## Not done yet
 
-- Machine access has no hosted acceptance, credential-management UI, standalone public SDK,
-  verified DAO delegation or complete external-client fault acceptance yet. Bearer credentials are
-  not sender-constrained; see
-  [machine-interface limits](docs/machine-api.md#failure-and-evidence-semantics).
+- Resting limit orders: the [app consumer](docs/limit-orders-consumer.md) uses a verified unpublished SDK 0.5.8 build with fresh platform proof for explicit pre-submission cancellation continuation. Offline/browser/container checks do not verify production provider routes, live placement/cancellation, fills, payout or policy enforcement; deployment remains gated on the compatible platform and separate staging intake.
+
+- Outside-agent access has no replacement in this repository yet: the Treasury app over the platform's
+  `/apps/v1` is a proposal (`coordination/treasury-app-move.md`). Until production is redeployed, it still serves
+  the removed machine route, which doesn't require the strategy-bound grant; the platform's 0.4.0 server does.
 
 - The Proto/domain release still requires its own review and authorization. Treasury's standalone
   fallback sign-in/private-access gate passed on 2026-10-16 UTC, deployment

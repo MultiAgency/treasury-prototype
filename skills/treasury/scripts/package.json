@@ -3,5 +3,5 @@
   "private": true,
   "type": "module",
   "engines": { "node": ">=24" },
-  "dependencies": { "@orpc/client": "2.0.0-beta.44" }
+  "dependencies": { "@orpc/client": "2.0.0-beta.47" }
 }

@@ -273,21 +273,16 @@ Token-weighted `Member` roles are not supported for private workspace admission;
 verified delegated voting balances. Public `Everyone` permissions contribute only after Group admission.
 The gateway caches DAO policy for up to a minute, so removal may take that long to affect access.
 
-The candidate [machine interface](machine-api.md) accepts only wallet-owner delegations, bound to
-one host, workspace and provider agent ID. It requires fresh chain/provider ownership observations
-on every request; failures refuse access without using dashboard ownership caches. DAO delegation is
-refused until verified DAO consent exists. Plan execution and sweep scopes are independent. This
-neither issues a provider grant nor signs for the owner, and execution uses the existing executor.
-Older experimental credentials remain listable/revocable but cannot authenticate. Offline regressions
-reproduced and fixed DAO issuance without consent, stale-identity access during failure, and credential
-reuse after agent replacement. Hosted acceptance, independent security review, sender-constrained
-credentials and a DAO delegation mechanism remain gaps.
+Treasury's own [machine interface](machine-api.md) was removed from this repository on 2026-11-03. Production
+still serves an earlier version of it until the owner redeploys (deployment `95451b7a`, observed 2026-11-03): its
+credentials, scopes and checks there are those of that deployment, not verified here, and it doesn't require the
+strategy-bound grant that the platform's 0.4.0 machine route does.
 
 The candidate external planner quotes chosen swaps and saves `source: external` plans for the existing
 execution path. Its skill helper completes an offline real-stack prepare/execute/evidence/revoke flow.
 This does not establish provider atomicity or full external-client crash/timeout acceptance. External
 plan execution uses Treasury authority, not scheduled autopilot; the schedule's auto-execute ceiling
-is not a machine-credential spending limit. There is no separate per-client budget. Those limits
+is not a credential spending limit. There is no separate per-client budget. Those limits
 must remain explicit when an owner delegates autonomous execution.
 
 An explicit session or agent-access denial hides retained private records in the shared Home and agent

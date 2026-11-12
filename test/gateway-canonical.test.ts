@@ -46,7 +46,7 @@ test("the legacy host redirects pages but never forwards API calls or replays bo
       assert.equal(answer.headers["set-cookie"], undefined);
       assert.equal(answer.headers["x-frame-options"], "DENY");
     }
-    for (const path of ["/gw/challenge", "/gw/me", "/a/treasury/rpc/overview", "/rpc/overview", "/machine/v1/a/treasury/rpc/overview"])
+    for (const path of ["/gw/challenge", "/gw/me", "/a/treasury/rpc/overview", "/rpc/overview"])
       assert.equal((await call(path)).status, 421, path);
     for (const path of ["/gw/session", "/gw/logout", "/a/treasury/rpc/executePlan", "/"])
       for (const method of ["POST", "PUT", "DELETE", "OPTIONS"])

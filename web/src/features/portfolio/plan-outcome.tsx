@@ -49,10 +49,10 @@ export function useFollowedPlan() {
     void navigate({ to: ".", search: { plan: planId }, replace: true });
   };
   // Closing the view changes only the page address; it never cancels or replays an operation.
-  const stopFollowing = () => {
+  const stopFollowing = useCallback(() => {
     setSelected(undefined);
     void navigate({ to: ".", search: {}, replace: true });
-  };
+  }, [navigate]);
   return { followed, followPlan, stopFollowing, refreshResult };
 }
 

@@ -5,7 +5,7 @@ import { connect } from "node:net";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { invoiceHandler } from "../src/invoice-http.js";
-import { ChallengeLimit, clientAddress, issueChallenge, MAX_CHALLENGES } from "../src/signin.js";
+import { ChallengeLimit, clientAddress, issueChallenge, MAX_CHALLENGES } from "../shared/signin.js";
 import { TSX } from "./fixtures/harness.js";
 
 const SERVER = fileURLToPath(new URL("../src/server.ts", import.meta.url));

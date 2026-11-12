@@ -1,7 +1,8 @@
 import type { Intent, OwnerWallet } from "@near-intents-agent-api/sdk";
 import { encodeSignedDelegateAction, Near, parsePublicKey } from "near-kit";
-import { accountExists, delegateTransaction, mainnet, transactionsApi } from "./chain.js";
-import { nep413Hash, rawKey, verifyEd25519 } from "./nep413.js";
+import { accountExists, delegateTransaction, transactionsApi } from "./chain.js";
+import { mainnet } from "../shared/near.js";
+import { nep413Hash, rawKey, verifyEd25519 } from "../shared/nep413.js";
 
 /**
  * A DAO as an agent's owner. A Sputnik DAO holds no keys, but it can sign through NEAR's MPC

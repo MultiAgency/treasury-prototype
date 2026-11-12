@@ -2,6 +2,7 @@
 // Treasury strategy demo: the actual Treasury skill helper against an isolated local Proto with a
 // simulated provider, chain and owner wallet. Proto supplies authority, records and execution; this
 // recipe only supplies scenario inputs, the owner's simulated decisions and a receipt.
+import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
@@ -19,8 +20,10 @@ const { values: options } = parseArgs({ options: {
   yes: { type: 'boolean', default: false },
   pause: { type: 'boolean', default: false },
   headed: { type: 'boolean', default: false },
+  helper: { type: 'string' },
 } });
-if (options.fault && options.fault !== 'lost-response') throw new Error('--fault accepts only lost-response');
+if (options.fault && !['lost-response', 'unbound-grant'].includes(options.fault)) throw new Error('--fault accepts lost-response or unbound-grant');
+const lost = options.fault === 'lost-response', unbound = options.fault === 'unbound-grant';
 const lostAt = Number(options['lost-at']);
 const scenario = JSON.parse(readFileSync(resolve(options.scenario), 'utf8'));
 if (!Array.isArray(scenario.swaps) || !scenario.swaps.length || !scenario.strategy) throw new Error('A scenario needs strategy and swaps');
@@ -48,7 +51,10 @@ const show = (label, value) => console.log(`   ${label}: ${value}`);
 
 source.copy(snapshot);
 const skill = join(repo, 'skills/treasury');
-receipt.provenance = { node: process.version, treasurySkill: digest(skill), ...source.provenance(snapshot) };
+// The packaged skill helper by default; `--helper` runs another implementation of the same commands, recorded as such.
+const helperFile = resolve(options.helper ?? join(skill, 'scripts/treasury.mjs'));
+receipt.provenance = { node: process.version, treasurySkill: digest(skill),
+  helper: { file: helperFile, sha256: createHash('sha256').update(readFileSync(helperFile)).digest('hex'), packaged: !options.helper }, ...source.provenance(snapshot) };
 
 console.log(`Treasury strategy demo · artifacts ${artifacts}`);
 console.log('SIMULATED: provider, chain, settlement and owner wallet. No real funds, credentials or signatures.');
@@ -59,10 +65,12 @@ source.build(snapshot, artifacts, offlineEnvironment());
 const { environment } = await import(join(snapshot, 'test/e2e/environment.mjs'));
 const { browserContext } = await import(join(snapshot, 'test/e2e/wallet.mjs'));
 const { PAYEE } = await import(join(snapshot, 'test/e2e/provider.mjs'));
+const { stackControls } = await import(join(snapshot, 'test/e2e/stack-controls.mjs'));
 const { chromium } = createRequire(join(snapshot, 'package.json'))('@playwright/test');
 const stack = await environment(join(artifacts, 'environment'), { workspace: true });
+const controls = stackControls(stack, { owner: PAYEE });
 const browser = await chromium.launch({ headless: !options.headed, slowMo: options.headed ? 250 : 0 });
-let token, ok = false, declined = false;
+let token, boundDigest, ok = false, declined = false;
 // Simulated provider submissions are counted from the start: dry quotes never enter this log.
 const start = stack.portfolio.swaps.length;
 const submitted = () => stack.portfolio.swaps.slice(start);
@@ -71,7 +79,7 @@ const env = () => ({ ...offlineEnvironment(), NODE_OPTIONS: `--require ${JSON.st
 /** One actual helper command. Output is kept privately in the run directory; the token never is. */
 function helper(...args) {
   return new Promise((done, fail) => {
-    const child = spawn(process.execPath, [join(skill, 'scripts/treasury.mjs'), ...args], { env: env() });
+    const child = spawn(process.execPath, [helperFile, ...args], { env: env() });
     let stdout = '', stderr = '';
     child.stdout.on('data', chunk => { stdout += chunk; });
     child.stderr.on('data', chunk => { stderr += chunk; });
@@ -102,6 +110,18 @@ try {
   record({ actor: 'owner', action: 'strategy fixture written', simulated: true, strategy: scenario.strategy });
   show('targets (bps)', JSON.stringify(scenario.strategy.targetBps));
 
+  await beat('Owner (simulated signature)', 'Authorize the saved strategy: a grant bound to its digest');
+  // Machine-credential plans run only under the owner's grant for the saved strategy (`treasury:<suffix>`). Proto's control
+  // prepares `grant_issue` with `expectedStrategyDigest` through the owner's route and signs it with the fixture key.
+  if (unbound) {
+    record({ actor: 'owner', action: 'strategy-bound grant not signed (fault)', simulated: true });
+    console.log('   SIMULATED FAULT: the owner skips this step; the live grant stays a plain `treasury` grant.');
+  } else {
+    ({ digest: boundDigest } = await controls.authorizeStrategy());
+    record({ actor: 'owner', action: 'strategy-bound grant signed', simulatedSignature: true, strategyDigest: boundDigest });
+    show('grant binds strategy', boundDigest);
+  }
+
   await beat('Owner (human decision)', 'Grant scoped agent access at Proto’s shared consent page');
   const wallet = await browserContext(browser, stack, PAYEE);
   const page = await wallet.context.newPage();
@@ -131,6 +151,7 @@ try {
   record({ actor: 'agent', action: 'observed', book: overview.book.map(({ symbol, public: open, confidential }) => ({ symbol, public: open, confidential })),
     budget: overview.policy?.usage?.budget ?? null, strategyDigest: strategy?.digest ?? null, unresolved: unresolvedBefore.length });
   if (unresolvedBefore.length) throw new Error('Unresolved operations block new sends; stop and inspect them first');
+  if (!unbound && strategy?.digest !== boundDigest) throw new Error('The saved strategy is not the one the owner authorized; machine plans would be refused');
 
   await beat('Agent', 'Choose swaps and quote them as one saved plan (externalPlan, never rebalance)');
   const swapsFile = join(artifacts, 'chosen-swaps.json');
@@ -158,8 +179,8 @@ try {
   } else {
     record({ actor: 'owner', action: 'execution authorized', planId: plan.id, submissionsBefore: submitted().length });
     await beat('Agent', 'Execute the saved plan once');
-    if (options.fault) stack.portfolio.dropSwapResponse(lostAt);
-    if (options.fault) console.log(`   SIMULATED FAULT: the provider's response to swap ${lostAt} is lost after it was accepted.`);
+    if (lost) stack.portfolio.dropSwapResponse(lostAt);
+    if (lost) console.log(`   SIMULATED FAULT: the provider's response to swap ${lostAt} is lost after it was accepted.`);
     const executed = await helper('execute', plan.id);
     for (const event of executed.output) show(`action ${event.index ?? '?'}`, `${event.type} ${event.status ?? ''} ${event.correlationId ?? ''}`.trim());
     if (executed.code !== 0) show('helper', executed.stderr);
@@ -181,7 +202,7 @@ try {
     // What the provider received, and what Proto recorded, against the plan's own legs and floors.
     const bodies = sent.map(({ body }) => ({ from: body.origin_asset, to: body.destination_asset, amount: body.amount, minAmountOut: body.min_amount_out }));
     const recorded = operations.map(({ request }) => ({ from: request?.origin_asset, to: request?.destination_asset, amount: request?.amount }));
-    const planned = plan.actions.slice(0, options.fault ? lostAt : plan.actions.length);
+    const planned = plan.actions.slice(0, unbound ? 0 : lost ? lostAt : plan.actions.length);
     const floorsKept = bodies.every(body => planned.some(action => legs([action])[0] === legs([body])[0] && action.minAmountOut === body.minAmountOut));
     record({ actor: 'agent', action: 'outcome observed', planId: plan.id,
       operations: operations.map(({ kind, request, status, refused, correlationId, at }) => ({ purpose: kind, amount: request?.amount, from: request?.origin_asset, to: request?.destination_asset, status: status ?? null, refused: refused ?? null, correlationId: correlationId ?? null, at })),
@@ -189,7 +210,12 @@ try {
       unresolved: unresolved.map(({ key, kind }) => ({ key, kind })), simulatedSubmissions: sent.length, distinctSubmissionIdentities: keys.size,
       submittedLegs: bodies, submittedTotal: total(bodies), floorsKept });
     const delivered = sameLegs(bodies, planned) && floorsKept && keys.size === sent.length;
-    if (options.fault) {
+    if (unbound) {
+      // Refused before the claim: one `rejected` event naming the grant, the helper's guidance, and nothing sent or recorded.
+      const [event, ...rest] = executed.output;
+      ok = executed.code !== 0 && !rest.length && event?.type === 'rejected' && /grant doesn't bind the saved strategy/.test(event.problems?.join(' ') ?? '') &&
+        /^Refused before sending/.test(executed.stderr) && sent.length === 0 && operations.length === 0 && unresolved.length === 0;
+    } else if (lost) {
       console.log('   Unknown outcome: the agent stops here. New sends stay blocked; it reports and keeps observing this plan, without replaying it.');
       await beat('Agent (probe)', 'Try to replay the plan, and to start a new action, while the outcome is unknown');
       const replay = await helper('execute', plan.id);

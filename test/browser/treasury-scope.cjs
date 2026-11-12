@@ -67,4 +67,37 @@ async function treasuryScope(browser, root) {
   await funding.page.getByRole('heading', { name: 'Rebalance', exact: true }).waitFor();
   await context.close();
 }
-runTask([treasuryScope]);
+/** A preserved operation (attempted, no provider reference) with the schedule off: the overview says why sends are blocked, what is safe and what comes next, and offers only reads. */
+async function treasuryBlocked(browser, root) {
+  const { budget, setup, overview } = workspaceEvidence();
+  const book = overview('treasury');
+  book.book[0].priceUpdatedAt = new Date().toISOString();
+  const preserved = { key: 'preserved-operation', kind: 'swap', sent: false, at: new Date().toISOString(), request: {}, status: null };
+  const open = workspaceOpener(root, { budget, values: () => ({
+    setup: { ...setup, executor: true }, instance: { agentId: setup.agentId, executor: true }, overview: book, 'treasury/get': null, unresolved: [preserved], held: [], activity: [], 'owner/actions': [],
+    'autopilot/get': { on: false, everyMin: 60, maxUsd: 10, lastRun: null, nextRun: null },
+    recover: [{ key: preserved.key, outcome: 'unknown', status: null, detail: 'No provider reference was recorded for this operation.' }],
+  }) });
+  for (const width of [390, 1280]) {
+    const context = await browser.newContext({ viewport: { width, height: 844 } });
+    const { page, calls, errors } = await open(context, '/a/treasury/');
+    const section = page.locator('section', { has: page.getByRole('heading', { name: 'Unresolved operations', exact: true }) });
+    await section.getByText('New sends are blocked by 1 unresolved operation.', { exact: true }).waitFor();
+    await section.getByText('Its submission was attempted and no provider reference was returned, so whether it executed is unknown.', { exact: true }).waitFor();
+    await section.getByText('Safe now: reading balances and records, previewing, and checking outcomes, which reads only and retries nothing.', { exact: true }).waitFor();
+    await section.getByText('Resolving it is a separate step that needs the owner’s authorization. This page cannot clear, retry or replay it.', { exact: true }).waitFor();
+    const order = await page.evaluate(() => [...document.querySelectorAll('main h2, main h3, main [role=status]')].map(n => n.textContent.trim()));
+    assert(order.findIndex(t => t.startsWith('New sends are blocked')) < order.findIndex(t => t.startsWith('Schedule:')), 'the block is stated before the schedule and balances');
+    assert.deepEqual(await section.getByRole('button').evaluateAll(nodes => nodes.map(n => n.textContent.trim()).filter(t => /clear|retry|replay|resolve/i.test(t))), [], 'no clear, retry, replay or resolve action');
+    await section.getByRole('button', { name: 'Check operation outcomes' }).click();
+    await section.getByText('Outcome still unknown', { exact: true }).waitFor();
+    await section.getByText('Review the provider record before creating a replacement operation.', { exact: true }).waitFor();
+    await section.getByText('Resolving it is a separate step that needs the owner’s authorization. This page cannot clear, retry or replay it.', { exact: true }).waitFor();
+    assert(!calls.some(method => ['executePlan', 'sweep', 'rebalance', 'pay', 'owner/prepare', 'owner/submit', 'autopilot/stop', 'autopilot/enable'].includes(method)), 'the blocked overview sends nothing');
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${width}: horizontal overflow`);
+    if (process.env.PROTO_BROWSER_ARTIFACTS) await page.screenshot({ path: require('node:path').join(process.env.PROTO_BROWSER_ARTIFACTS, `blocked-${width}.png`), fullPage: true });
+    assert.deepEqual(errors, []);
+    await context.close();
+  }
+}
+runTask([treasuryScope, treasuryBlocked]);

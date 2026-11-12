@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { Intent, OwnerWallet } from "@near-intents-agent-api/sdk";
 import { DELEGATE_ACTION_PREFIX, decodeSignedDelegateAction } from "near-kit";
 import { canonical } from "./mandate.js";
-import { nep413Hash, rawKey, signatureBytes, verifyEd25519 } from "./nep413.js";
+import { nep413Hash, rawKey, signatureBytes, verifyEd25519 } from "../shared/nep413.js";
 
 /**
  * Whether a wallet's signed data is the owner's signature over exactly the intent this server

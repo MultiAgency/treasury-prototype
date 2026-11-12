@@ -99,10 +99,9 @@ Preserve the entire state directory and all settings, including:
 - `.ops/`, `.invoices/` including SQLite journals, `.owner-intents/`, `.strategy/`, `.plans/`,
   `.evidence/`, `.inbox/`, `.agreements/`, `.notify/`, `.work-orders/` and legacy `.intake/` state.
 - Existing grant tokens, staged grant settings, journal identities and owner-action records.
-- `.machine-auth/` at the gateway root, including credential hashes, expiry/revocation flags and
-  access attribution. This additive candidate state needs no conversion of existing records; see
-  [machine interface](machine-api.md#state-preservation-and-rollout). An older backup can restore revoked
-  credentials: invalidate affected records before reopening machine access after such a rollback.
+- `.machine-auth/` at the gateway root: credential hashes, expiry/revocation flags and access attribution from the
+  removed machine interface. Nothing reads it any more; archive it rather than delete it
+  ([machine interface](machine-api.md#state-archive-machine-auth-dont-delete-it)).
 
 Do not discard inherited directories because the Treasury UI no longer exposes their workflows.
 Never initialize a fresh registry over retained child state. A corrupt registry or missing registered

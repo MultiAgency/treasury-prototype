@@ -18,6 +18,9 @@ Scopes are independent. Read/prepare access does not permit execution; saved-pla
 permit a fresh sweep. Credential lifecycle management uses Proto's shared `/a/<name>/access` owner browser sign-in.
 Credentials expire and can be revoked; they add no spending budget. External plan execution is not
 limited by the scheduled autopilot's per-run ceiling. DAO delegation remains refused.
+On a platform host running the `@multiagency/sdk` 0.4.0 server, `executePlan` also needs the owner's live
+grant to bind the saved strategy (`treasury:<first 32 hex of its digest>`); otherwise it answers one
+`rejected` event and sends nothing (see the skill's "Strategy-bound grant").
 
 ## Prepare input
 

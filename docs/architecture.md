@@ -28,9 +28,10 @@ existing domain calls. Submission remains centralized in dispatch.
 |---|---|
 | Sending | `agent.ts` (dispatch), `authorize.ts` (checks the provider can't make; pure), `lock.ts`, `executor-lease.ts`, `executor-lifecycle.ts` |
 | Records | `ops.ts` (the operation journal), `recover.ts`, `reconcile.ts`, `synced.ts`, `evidence.ts`, `inbox.ts` |
-| The owner's rules | `policy.ts`, `mandate.ts` (the digest), `grants.ts`, `owner-intents.ts`, `owner-requests.ts`, `owner.ts`, `dao-owner.ts`, `nep413.ts`, `chain.ts` |
+| The owner's rules | `policy.ts`, `mandate.ts` (the digest), `grants.ts`, `owner-intents.ts`, `owner-requests.ts`, `owner.ts`, `dao-owner.ts`, `chain.ts`; `../shared/nep413.ts` |
 | Provider and values | `api.ts`, `holdings.ts`, `value.ts`, `ledger.ts` |
-| Serving | `server.ts`, `router.ts`, `http.ts`, `signin.ts`, `env.ts`, `notify.ts` |
+| Serving | `server.ts`, `router.ts`, `env.ts`, `notify.ts`; `../shared/http.ts`, `../shared/signin.ts` |
+| Shared with the Treasury app (`shared/`, outside the retiring `src/`) | `http.ts`, `nep413.ts`, `signin.ts`, `near.ts` (the mainnet RPC config) |
 
 ## Confidential Treasury Facilitator (the payout agent)
 

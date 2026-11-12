@@ -111,20 +111,6 @@ export async function resolveAgentAccess(account: string, agent: Agent, now = Da
   return reportedOwner !== undefined && ownedBy(reportedOwner, owner) ? access : null;
 }
 
-/** Machine delegation requires a live, established wallet owner. No cached/fallback evidence or DAO delegation. */
-export async function resolveMachineAccess(account: string, agent: Agent): Promise<{ access: Access; agentId: string } | null> {
-  if (account !== agent.owner) return null;
-  try {
-    if (await daoPolicy(agent.owner)) return null;
-    const link = new RPCLink({ origin: `http://127.0.0.1:${agent.port}`, url: "/rpc", headers: { "x-gateway": "owner-check" } });
-    const client: RouterClient<Router> = createORPCClient(link);
-    const parsed = identity.safeParse(await client.ownerIdentity(undefined, { signal: AbortSignal.timeout(3_000) }));
-    if (!parsed.success || !parsed.data.agentId || !parsed.data.owner ||
-      parsed.data.owner.type !== "near" || parsed.data.owner.account_id !== account) return null;
-    return { access: accessOf(account, { account, policy: null, signer: account })!, agentId: parsed.data.agentId };
-  } catch { return null; }
-}
-
 /** `account`'s access to each agent it may see, by agent name; empty when it may see none. */
 export async function resolveAccess(account: string, agents: Agent[], now = Date.now()) {
   // Fleet discovery still resolves every configured agent concurrently.

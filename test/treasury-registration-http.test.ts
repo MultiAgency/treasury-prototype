@@ -6,7 +6,7 @@ import {mkdtempSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import type {AddressInfo} from 'node:net';
-import {sessionToken} from '../src/signin.js';
+import {sessionToken} from '../shared/signin.js';
 const listen=(s:Server)=>new Promise<number>((done,fail)=>{s.once('error',fail);s.listen(0,'127.0.0.1',()=>done((s.address() as AddressInfo).port));});
 
 test('self-service gateway admits a new authenticated account, scopes its workspace and pins owner creation', {timeout:30000}, async()=>{

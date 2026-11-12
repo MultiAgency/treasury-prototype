@@ -1,4 +1,4 @@
-# Only package files, tsconfig.json and src/ are copied; this keeps secrets and state out of the build context.
+# Only package files, tsconfig.json, shared/ and src/ are copied; this keeps secrets and state out of the build context.
 .env
 .env.*
 .ops
@@ -20,6 +20,8 @@ test
 
 # Self-service treasury registry and private per-owner state
 .treasuries/
+.app/
+.machine-auth/
 
 # Retained private state and local verification artifacts never enter the build context.
 .agreements/

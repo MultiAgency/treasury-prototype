@@ -69,7 +69,7 @@ runSuite(async () => {
           const failed = list.locator('li').filter({ hasText: 'failed-operation' });
           assert.match(await failed.innerText(), /failed/i);
           assert.doesNotMatch(await failed.innerText(), /paid|successful|safe to retry/i);
-          assert.match(await failed.innerText(), /replacement payment/i);
+          assert.match(await failed.innerText(), /replacement operation/i, 'a Treasury agent names a replacement operation, not a payment');
           assert.match(await list.locator('li').filter({ has: page.getByText('held-operation', { exact: true }) }).innerText(), /owner approval/i);
           assert.match(await list.locator('li').filter({ hasText: 'unknown-operation' }).innerText(), /outcome.*unknown/i);
           const unread = list.locator('li').filter({ hasText: 'unread-held-operation' });

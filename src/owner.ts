@@ -3,7 +3,8 @@ import { createInterface } from "node:readline/promises";
 import type { GenerateIntentResponse, OwnerWallet, SignedData } from "@near-intents-agent-api/sdk";
 import { Near, parseKey, type PrivateKey } from "near-kit";
 import { api, waitForStatus } from "./api.js";
-import { delegateTransaction, mainnet } from "./chain.js";
+import { delegateTransaction } from "./chain.js";
+import { mainnet } from "../shared/near.js";
 
 const accountId = process.env.AGENT_OWNER_ACCOUNT_ID;
 const privateKey = process.env.AGENT_OWNER_PRIVATE_KEY as PrivateKey | undefined;

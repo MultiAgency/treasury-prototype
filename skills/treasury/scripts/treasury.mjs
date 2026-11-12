@@ -51,6 +51,11 @@ try {
     for await (const event of answer) {
       process.stdout.write(print(event) + '\n');
       if (event.type === 'rejected' || (event.status !== undefined && event.status !== 'SUCCESS')) process.exitCode = 1;
+      // The platform's refusal carries no code, only this reason (SDK 0.4.0 server, src/planning/strategy-grant.ts).
+      if (event.type === 'rejected' && event.problems?.some(problem => /grant doesn't bind the saved strategy/.test(problem)))
+        process.stderr.write('Refused before sending: the owner\'s live grant does not bind the saved strategy. Report this to the owner; '
+          + 'do not retry execute or prepare a replacement plan until the owner authorizes the saved strategy by signing a grant for it. '
+          + 'Saving a different strategy needs a new grant.\n');
     }
   } else process.stdout.write(print(answer) + '\n');
 } catch (error) {

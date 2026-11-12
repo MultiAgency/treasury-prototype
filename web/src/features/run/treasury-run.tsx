@@ -28,7 +28,7 @@ export function TreasuryRun() {
       <RunStep id="check" number={1} title="Check this agent"><AgentChecks run={run} open /></RunStep>
       <RunStep id="preview" number={2} title="Preview and execute a rebalance">
         <Link to="/automations" className="self-start text-sm underline">Review the allocation and strategy limits</Link>
-        <Rebalance disabledReason={run.firstBlocker?.detail} onExecute={followPlan} onResult={refreshResult} />
+        <Rebalance disabledReason={run.firstBlocker?.detail} onExecute={followPlan} onResult={refreshResult} onRefused={stopFollowing} />
       </RunStep>
       <RunStep id="outcome" number={3} title="Check the outcome">
         {followed ? <PlanOutcome key={followed.planId} selected={followed} onStop={stopFollowing} />

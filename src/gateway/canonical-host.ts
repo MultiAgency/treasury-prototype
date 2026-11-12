@@ -11,7 +11,7 @@ export function canonicalHostAnswer(req: IncomingMessage, url: URL, canonical: s
   if (!host || host === canonical.toLowerCase() || !aliases.some(alias => alias.toLowerCase() === host)) return null;
   const pageRead = req.method === "GET" || req.method === "HEAD";
   if (pageRead && url.pathname === "/health") return null;
-  const api = /^\/(?:gw|rpc|machine)(?:\/|$)/.test(url.pathname) || /^\/a\/[^/]+\/rpc(?:\/|$)/.test(url.pathname);
+  const api = /^\/(?:gw|rpc)(?:\/|$)/.test(url.pathname) || /^\/a\/[^/]+\/rpc(?:\/|$)/.test(url.pathname);
   if (!pageRead || api) return { status: 421 as const };
   const target = new URL(`https://${canonical}`);
   // Assign components instead of resolving an untrusted path (which could name another origin).

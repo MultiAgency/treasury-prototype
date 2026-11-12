@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import lockfile from "proper-lockfile";
 import { z } from "zod";
-import { BadRequest } from "../http.js";
+import { BadRequest } from "../../shared/http.js";
 import { mkdirSynced, writeAtomic } from "../synced.js";
 import { accessOf, type Owner } from "./roles.js";
 import type { AgentEntry } from "./config.js";

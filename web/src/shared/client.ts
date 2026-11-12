@@ -1,5 +1,5 @@
 import type { Client as RpcClient, FriendlyClientOptions } from "@orpc/client";
-import { ownerClient, ownerStreams, type OwnerCallOptions, type OwnerFailure, type OwnerInputs, type OwnerOutput, type OwnerProcedure, type RefusalDetails } from "@multiagency/sdk";
+import { gatewayDenialScope, ownerClient, ownerStreams, type OwnerCallOptions, type OwnerFailure, type OwnerInputs, type OwnerOutput, type OwnerProcedure, type RefusalDetails } from "@multiagency/sdk";
 import { reportAccessDenial } from "./access";
 
 /**
@@ -59,9 +59,8 @@ export function clientFor(base: "" | `/${string}`): Client {
     if (response.status === 401 || response.status === 403) {
       const body = await response.clone().json().catch(() => null);
       if (typeof body?.json?.code !== "string") {
-        // Older gateways have no scope field. Their procedure denial must not revoke agent reads.
-        const scope = body?.access === "procedure" || body?.error === "Operators only" ? "procedure"
-          : body?.access === "session" || response.status === 401 ? "session" : "agent";
+        // Older gateways declare no scope. Their procedure denial must not revoke agent reads.
+        const scope = gatewayDenialScope(body) ?? (body?.error === "Operators only" ? "procedure" : response.status === 401 ? "session" : "agent");
         reportAccessDenial({ base, scope, message: typeof body?.error === "string" ? body.error : "Access is no longer available." });
       }
     }

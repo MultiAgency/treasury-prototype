@@ -5,7 +5,8 @@ import { DownloadSimple } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ago, amountOf, client, describeRequest, type Overview, queries, swaps, useAttempt } from "../../shared/lib";
+import { ago, amountOf, client, describeRequest, kindOf, type Overview, queries, swaps, useAttempt } from "../../shared/lib";
+import { blockedBy } from "../../shared/send-block";
 import { useNameOf } from "../../shared/names";
 import { useCanCall } from "../../app/viewer";
 import { refusalText } from "../../shared/words";
@@ -22,13 +23,13 @@ export function ActivityReturn() {
 type OperationCheck = Awaited<ReturnType<typeof client.recover>>[number];
 
 /** A status read describes existing work; it never establishes that a replacement is safe. */
-function OperationCheckResult({ check }: { check: OperationCheck }) {
+function OperationCheckResult({ check, replacement }: { check: OperationCheck; replacement: string }) {
   const label = check.outcome === "unknown" ? "Outcome still unknown"
     : check.outcome === "refused" ? "Refusal recorded"
       : check.outcome === "open" ? "Operation still open" : "Provider outcome reported";
-  const next = check.outcome === "unknown" ? "Review the provider record before creating a replacement payment."
+  const next = check.outcome === "unknown" ? `Review the provider record before creating a replacement ${replacement}.`
     : check.outcome === "refused" ? "This operation was refused before submission. Review the refusal before preparing a new action."
-      : check.status === "FAILED" ? "A failed status alone does not establish that a replacement payment is safe. Review the provider record."
+      : check.status === "FAILED" ? `A failed status alone does not establish that a replacement ${replacement} is safe. Review the provider record.`
         : check.status === "PENDING_APPROVAL" ? "Held for owner approval. Review the held payout and its owner decision."
           : check.status === "PREPARED" ? "No submission was attempted. Review the original invoice to continue."
             : check.outcome === "open" ? "The operation is still open. Check its outcome again later."
@@ -47,6 +48,19 @@ function OperationCheckResult({ check }: { check: OperationCheck }) {
   </li>;
 }
 
+/** Why new sends are blocked, what stays safe and what comes next. Resolution is never offered here. */
+function BlockedSummary({ operations }: { operations: Awaited<ReturnType<typeof client.unresolved>> }) {
+  const one = operations.length === 1, them = one ? "it" : "them";
+  const attempted = operations.filter(op => !op.sent && op.status !== "PREPARED").length;
+  return <div className="flex flex-col gap-2 text-sm">
+    <p role="status" className="font-medium text-warning-muted-foreground">{blockedBy(operations.length)}</p>
+    {attempted > 0 && <p>{one ? "Its submission was attempted and no provider reference was returned, so whether it executed is unknown."
+      : `${attempted} ${attempted === 1 ? "was" : "were"} attempted with no provider reference returned, so whether ${attempted === 1 ? "it" : "they"} executed is unknown.`}</p>}
+    <p>Safe now: reading balances and records, previewing, and checking outcomes, which reads only and retries nothing.</p>
+    <p>Resolving {them} is a separate step that needs the owner’s authorization. This page cannot clear, retry or replay {them}.</p>
+  </div>;
+}
+
 /**
  * Money actions without a proven outcome. Each blocks every new one, so the agent waits until they
  * are resolved. Recovery only reads statuses; ambiguous replay is blocked.
@@ -56,6 +70,8 @@ export function Unresolved() {
   const { data: overview } = useAgent();
   const unresolved = useQuery(queries.unresolved);
   const data = accessDenied(unresolved.error) ? [] : unresolved.data ?? [];
+  // Treasury operations are swaps and shields; Payables keeps its payment wording.
+  const replacement = kindOf(overview) === "treasury" ? "operation" : "payment";
   const { busy, message, error, attempt } = useAttempt();
   const [checks, setChecks] = useState<Awaited<ReturnType<typeof client.recover>>>([]);
   // A failed read can't show that nothing is unresolved: say so instead of hiding the section.
@@ -64,7 +80,7 @@ export function Unresolved() {
       <Section title="Unresolved operations" description="New sends are blocked while these outcomes remain unknown.">
         <ReadFailure label="Unresolved operations" error={unresolved.error} retry={() => unresolved.refetch()} retained={unresolved.data !== undefined} updatedAt={unresolved.dataUpdatedAt} />
         {data.length > 0 && <ul className="space-y-2 text-sm">{data.map(op => <li key={op.key} className="break-all">{op.kind} · {op.status ?? "outcome unknown"} · {op.key}</li>)}</ul>}
-        <p className="text-sm">Refresh these records before checking operation outcomes. Missing current evidence does not make a replacement payment safe.</p>
+        <p className="text-sm">Refresh these records before checking operation outcomes. Missing current evidence does not make a replacement {replacement} safe.</p>
       </Section>
     );
   if (unresolved.isPending) return <Section title="Unresolved operations"><Loading label="Checking unresolved operations…" /></Section>;
@@ -78,11 +94,9 @@ export function Unresolved() {
     });
 
   return (
-    <Section
-      title="Unresolved operations"
-      description="New sends are blocked while these outcomes remain unknown. Checking outcomes reads existing operations and sends nothing."
-    >
+    <Section title="Unresolved operations">
       <Card>
+        {data.length > 0 && <BlockedSummary operations={data} />}
         <ul className="flex flex-col divide-y">
           {data.map((op) => (
             <li key={op.key} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 text-sm first:pt-0 last:pb-0">
@@ -105,10 +119,10 @@ export function Unresolved() {
           </Button>
         </div>
         {data.length > 0 && <div className="flex flex-col gap-2 text-sm">
-          <p>{canRecover ? "If checking leaves an unknown outcome, investigate the provider record before sending again." : "Your account cannot check these operations. Ask someone with execution or management permission."} These references contain private agent information.</p>
+          <p>{canRecover ? "" : "Your account cannot check these operations. Ask someone with execution or management permission. "}These references contain private agent information.</p>
           <div><CopyButton text={JSON.stringify({ agent: overview.agentId, unresolved: data.map(({ key, status, at }) => ({ key, status, at })) }, null, 2)} /> Copy review references</div>
         </div>}
-        {checks.length > 0 && <div className="flex flex-col gap-3 text-sm"><h3 className="font-medium">Last outcome check</h3><ul aria-label="Operation status results" className="divide-y">{checks.map(check => <OperationCheckResult key={check.key} check={check} />)}</ul></div>}
+        {checks.length > 0 && <div className="flex flex-col gap-3 text-sm"><h3 className="font-medium">Last outcome check</h3><ul aria-label="Operation status results" className="divide-y">{checks.map(check => <OperationCheckResult key={check.key} check={check} replacement={replacement} />)}</ul></div>}
         <Details summary="When an outcome stays unknown">
           <p className="text-muted-foreground">A missing operation ID does not prove that nothing was sent. Investigate the original operation; this check does not retry it.</p>
         </Details>

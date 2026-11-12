@@ -7,7 +7,7 @@ import { checkRequest, type DaoRequest, decodeProposals, readDelegate } from "..
 import type { DaoProposal } from "../src/gateway/sign-requests.js";
 import { proposalAndVote, proposalTransaction } from "../src/dao-owner.js";
 import { proposalDescription } from "../src/owner-intents.js";
-import { nep413Hash } from "../src/nep413.js";
+import { nep413Hash } from "../shared/nep413.js";
 
 const DAO = "agentic.sputnik-dao.near";
 
