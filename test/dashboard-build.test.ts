@@ -44,18 +44,18 @@ test("images pin the legacy SDK and the verified portable order-consumer artifac
   const specs = { ...manifest.dependencies, ...manifest.devDependencies } as Record<string, string>;
   assert.equal(specs["@multiagency/sdk"], "0.4.0", "legacy consumers keep their existing exact published SDK pin");
   const candidate = "vendor/multiagency-sdk-0.5.8.tgz";
-  assert.equal(specs["@multiagency/treasury-app-sdk"], `file:${candidate}`, "the unpublished candidate is a portable vendored file, never an absolute checkout path");
+  assert.equal(specs["@multiagency/treasury-app-sdk"], `file:${candidate}`, "the vendored candidate is a portable file, never an absolute checkout path");
   assert.equal(createHash("sha256").update(readFileSync(join(root, candidate))).digest("hex"),
-    "3c3b87d541ff479771dc3cda7a15609b103b8315e6c5fc07d5e88f189a1786b5", "the frozen consumer build is exactly the verified handoff artifact");
+    "844fae568516dbc8d377d6f8dcceb8177be8a92c134db545d024ac25cf45d254", "the frozen consumer build is exactly the verified handoff artifact");
   assert.equal(readFileSync(join(root, `${candidate}.sha256`), "utf8").trim(),
-    "3c3b87d541ff479771dc3cda7a15609b103b8315e6c5fc07d5e88f189a1786b5  multiagency-sdk-0.5.8.tgz", "the portable checksum sidecar names these exact bytes");
+    "844fae568516dbc8d377d6f8dcceb8177be8a92c134db545d024ac25cf45d254  multiagency-sdk-0.5.8.tgz", "the portable checksum sidecar names these exact bytes");
   const packed = spawnSync("tar", ["-xOf", join(root, candidate), "package/provenance.json"], { encoding: "utf8" });
   assert.equal(packed.status, 0, `${packed.error ?? ""}\n${packed.stderr}`);
   const provenance = JSON.parse(packed.stdout);
   assert.equal(provenance.name, "@multiagency/sdk");
   assert.equal(provenance.version, "0.5.8");
-  assert.equal(provenance.sourceHead, "2fedc80227b641cc7db48e079af2ed229a619d3f", "source is the reviewed platform commit");
-  assert.equal(provenance.snapshot.runDigest, "8c52a2464c06340e5f25fbbe5c64dcab6b4667b51adfa4c801cb36fe7d062e15", "source snapshot matches the frozen handoff");
+  assert.equal(provenance.sourceHead, "2326a89505b7cb4996820467856de01165f881c6", "source is the reviewed platform commit");
+  assert.equal(provenance.snapshot.runDigest, "6ce0914b10e83ffd74714b5356fee4d45699ce96f88cf96270bd524ca485f0fa", "source snapshot matches the frozen handoff");
   assert.equal(provenance.snapshot.overlayDiffSha256, null);
   assert.deepEqual(provenance.dirtyPaths, []);
   assert.deepEqual(provenance.sourcesDirty, []);

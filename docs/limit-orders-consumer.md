@@ -1,20 +1,20 @@
 # Treasury app limit-order consumer
 
-Status: local consumer integration only, using the frozen, unpublished SDK 0.5.8 handoff build. No live order, provider mutation, deployment or live-service restart was performed. Offline and browser fixtures do not establish provider behavior.
+Status: local consumer integration only, using the frozen SDK 0.5.8 candidate artifact. Package publication and deployed support are separate gates. No live order, provider mutation, deployment or live-service restart was performed. Offline and browser fixtures do not establish provider behavior.
 
 ## Dependency and release boundary
 
-The order app imports `@multiagency/treasury-app-sdk`, pinned to the portable repository artifact `file:vendor/multiagency-sdk-0.5.8.tgz`. Its verified SHA-256 is `3c3b87d541ff479771dc3cda7a15609b103b8315e6c5fc07d5e88f189a1786b5`. This current source-frozen candidate replaces the earlier 0.5.8 consumer artifact. It remains unpublished. Its local release evidence does not establish a compatible deployed platform or provider.
+The order app imports `@multiagency/treasury-app-sdk`, pinned to the portable repository artifact `file:vendor/multiagency-sdk-0.5.8.tgz`. Its verified SHA-256 is `844fae568516dbc8d377d6f8dcceb8177be8a92c134db545d024ac25cf45d254`. This source-frozen candidate replaces the earlier 0.5.8 consumer artifact. Its local release evidence does not establish a compatible deployed platform or provider.
 
 The tarball's `package/provenance.json` records:
 
-- Platform source commit [`2fedc80227b641cc7db48e079af2ed229a619d3f`](https://github.com/MultiAgency/platform/commit/2fedc80227b641cc7db48e079af2ed229a619d3f), associated with [MultiAgency/platform#78](https://github.com/MultiAgency/platform/pull/78).
-- Source snapshot digest `8c52a2464c06340e5f25fbbe5c64dcab6b4667b51adfa4c801cb36fe7d062e15`.
+- Platform source commit [`2326a89505b7cb4996820467856de01165f881c6`](https://github.com/MultiAgency/platform/commit/2326a89505b7cb4996820467856de01165f881c6), following merged [MultiAgency/platform#78](https://github.com/MultiAgency/platform/pull/78).
+- Source snapshot digest `6ce0914b10e83ffd74714b5356fee4d45699ce96f88cf96270bd524ca485f0fa`.
 - Empty `dirtyPaths` and `sourcesDirty`, with no overlay diff.
 
 The checksum was verified before use. The build-input regression pins the artifact checksum, checksum sidecar and embedded source provenance. These identify the tested consumer bytes; they do not establish a published package, a compatible deployed platform or live provider behavior.
 
-For this unpublished build, keep the portable vendored dependency:
+For this candidate build, keep the portable vendored dependency:
 
 ```json
 "@multiagency/treasury-app-sdk": "file:vendor/multiagency-sdk-0.5.8.tgz"
@@ -26,7 +26,7 @@ The candidate contract omits legacy `Client.treasury.setConfidential` and `Clien
 
 ## Current candidate contract comparison
 
-Compared with the immediately prior 0.5.8 consumer artifact from `8b2da58`, only the packed `CHANGES.md` and `provenance.json` changed; the other 99 packed files, including the limit-order contracts, app client, consent and capability contracts, and SDK Treasury app skill, are byte-identical. The earlier optional `payment.repeats` addition on an owner `approval_vote` preparation remains unchanged. This Treasury consumer does not use that payment preparation path. Its order behavior is rechecked against the current candidate.
+Compared with the immediately prior 0.5.8 consumer artifact from `2fedc80`, packed `CHANGES.md`, `provenance.json` and two generated JavaScript bundles changed. The bundles differ only in build-path comments; their executable lines and the other 97 packed files, including the limit-order contracts, app client, consent and capability contracts, and SDK Treasury app skill, are byte-identical. The earlier optional `payment.repeats` addition on an owner `approval_vote` preparation remains unchanged. This Treasury consumer does not use that payment preparation path. Its order behavior is rechecked against the current candidate.
 
 ## Consent and operation behavior
 
@@ -52,7 +52,7 @@ For the dedicated app image, staging configuration, read-only platform preflight
 
 ## Remaining platform/provider gates
 
-- Publish the SDK feature release, verify its provenance against the reviewed frozen source and pin the exact reviewed package. Review and release a compatible platform from draft PR #78; verify the deployed app capability endpoint and all order/DAO route contracts. The older 0.5.7 staging platform lacks this order route; an advertised capability alone proves neither the active agent release nor provider support.
+- Verify SDK feature-release publication and provenance against the reviewed frozen source before proposing a registry alias. PR #78 is merged; release and verify a compatible platform before app rollout, including its deployed app capability endpoint and all order/DAO route contracts. The older 0.5.7 staging platform lacks this order route; an advertised capability alone proves neither the active agent release nor provider support.
 - Production provider order routes remain unverified and were absent in the supplied read-only platform observation. Live placement, cancellation, partial fills, final payout semantics, deduplication and provider policy enforcement remain unverified.
 - The owner must separately sign a policy revision enabling `limit_order` with its deviation bound, hold the required live Treasury grant, and satisfy platform policy/strategy checks. A configured cash floor currently refuses resting orders.
 - Preserve and reconcile platform order journals, one-way claims and DAO relay receipts for rollout/rollback; an older platform cannot be assumed to read new order journal methods.

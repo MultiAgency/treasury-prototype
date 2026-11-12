@@ -720,7 +720,7 @@ packages:
       zod: ^4.6.5
 
   '@multiagency/sdk@file:vendor/multiagency-sdk-0.5.8.tgz':
-    resolution: {integrity: sha512-72BSDAQlyoyOi7k+w8a3xuBpF9cDVto2NqDHbik6mL3OwHisz6M5RqQGILMoLVjq9KuBPptFU8ycNKJePZygwg==, tarball: file:vendor/multiagency-sdk-0.5.8.tgz}
+    resolution: {integrity: sha512-YlqzP0nl7TREM9iXlMQ6SoGP1k+k7S3cFiyPeC/NTDAXHNVs5sq23O0ZsUSSznCWRbtXuO+WZHoezQuCGCna9g==, tarball: file:vendor/multiagency-sdk-0.5.8.tgz}
     version: 0.5.8
     hasBin: true
     peerDependencies:
