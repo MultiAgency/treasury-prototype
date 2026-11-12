@@ -46,16 +46,16 @@ test("images pin the legacy SDK and the verified portable order-consumer artifac
   const candidate = "vendor/multiagency-sdk-0.5.8.tgz";
   assert.equal(specs["@multiagency/treasury-app-sdk"], `file:${candidate}`, "the unpublished candidate is a portable vendored file, never an absolute checkout path");
   assert.equal(createHash("sha256").update(readFileSync(join(root, candidate))).digest("hex"),
-    "cd3f9736f1e729e9ca98edf38bd64819ecbf955114ab0420e40b5c00462ec14b", "the frozen consumer build is exactly the verified handoff artifact");
+    "3c3b87d541ff479771dc3cda7a15609b103b8315e6c5fc07d5e88f189a1786b5", "the frozen consumer build is exactly the verified handoff artifact");
   assert.equal(readFileSync(join(root, `${candidate}.sha256`), "utf8").trim(),
-    "cd3f9736f1e729e9ca98edf38bd64819ecbf955114ab0420e40b5c00462ec14b  multiagency-sdk-0.5.8.tgz", "the portable checksum sidecar names these exact bytes");
+    "3c3b87d541ff479771dc3cda7a15609b103b8315e6c5fc07d5e88f189a1786b5  multiagency-sdk-0.5.8.tgz", "the portable checksum sidecar names these exact bytes");
   const packed = spawnSync("tar", ["-xOf", join(root, candidate), "package/provenance.json"], { encoding: "utf8" });
   assert.equal(packed.status, 0, `${packed.error ?? ""}\n${packed.stderr}`);
   const provenance = JSON.parse(packed.stdout);
   assert.equal(provenance.name, "@multiagency/sdk");
   assert.equal(provenance.version, "0.5.8");
-  assert.equal(provenance.sourceHead, "6f85117e6ec02b15250751adf98de5dc2b66664c", "source is the reviewed platform commit");
-  assert.equal(provenance.snapshot.runDigest, "5025c27324536ef1c0130b82c08fe2523c3ed5d07b7ffa92f22621940f563ea8", "source snapshot matches the frozen handoff");
+  assert.equal(provenance.sourceHead, "2fedc80227b641cc7db48e079af2ed229a619d3f", "source is the reviewed platform commit");
+  assert.equal(provenance.snapshot.runDigest, "8c52a2464c06340e5f25fbbe5c64dcab6b4667b51adfa4c801cb36fe7d062e15", "source snapshot matches the frozen handoff");
   assert.equal(provenance.snapshot.overlayDiffSha256, null);
   assert.deepEqual(provenance.dirtyPaths, []);
   assert.deepEqual(provenance.sourcesDirty, []);

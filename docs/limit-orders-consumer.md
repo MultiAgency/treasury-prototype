@@ -4,12 +4,12 @@ Status: local consumer integration only, using the frozen, unpublished SDK 0.5.8
 
 ## Dependency and release boundary
 
-The order app imports `@multiagency/treasury-app-sdk`, pinned to the portable repository artifact `file:vendor/multiagency-sdk-0.5.8.tgz`. Its verified SHA-256 is `cd3f9736f1e729e9ca98edf38bd64819ecbf955114ab0420e40b5c00462ec14b`. This current source-frozen candidate replaces the earlier 0.5.8 consumer artifact. It remains unpublished. Its local release evidence does not establish a compatible deployed platform or provider.
+The order app imports `@multiagency/treasury-app-sdk`, pinned to the portable repository artifact `file:vendor/multiagency-sdk-0.5.8.tgz`. Its verified SHA-256 is `3c3b87d541ff479771dc3cda7a15609b103b8315e6c5fc07d5e88f189a1786b5`. This current source-frozen candidate replaces the earlier 0.5.8 consumer artifact. It remains unpublished. Its local release evidence does not establish a compatible deployed platform or provider.
 
 The tarball's `package/provenance.json` records:
 
-- Platform source commit [`6f85117e6ec02b15250751adf98de5dc2b66664c`](https://github.com/MultiAgency/platform/commit/6f85117e6ec02b15250751adf98de5dc2b66664c), associated with [MultiAgency/platform#78](https://github.com/MultiAgency/platform/pull/78).
-- Source snapshot digest `5025c27324536ef1c0130b82c08fe2523c3ed5d07b7ffa92f22621940f563ea8`.
+- Platform source commit [`2fedc80227b641cc7db48e079af2ed229a619d3f`](https://github.com/MultiAgency/platform/commit/2fedc80227b641cc7db48e079af2ed229a619d3f), associated with [MultiAgency/platform#78](https://github.com/MultiAgency/platform/pull/78).
+- Source snapshot digest `8c52a2464c06340e5f25fbbe5c64dcab6b4667b51adfa4c801cb36fe7d062e15`.
 - Empty `dirtyPaths` and `sourcesDirty`, with no overlay diff.
 
 The checksum was verified before use. The build-input regression pins the artifact checksum, checksum sidecar and embedded source provenance. These identify the tested consumer bytes; they do not establish a published package, a compatible deployed platform or live provider behavior.

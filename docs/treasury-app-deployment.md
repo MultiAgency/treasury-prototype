@@ -39,7 +39,7 @@ The existing staging identity supplied for this handoff is `multiagency-treasury
 
 ## Operator credential intake
 
-The platform operator issues the app's `tap_…` credential. A Railway service key, provider API key or another app's token is not a substitute. There is no self-service credential-issuance endpoint. Follow the platform's [developer-access process at the frozen source](https://github.com/MultiAgency/platform/blob/6f85117e6ec02b15250751adf98de5dc2b66664c/docs/developer-access.md) before provisioning:
+The platform operator issues the app's `tap_…` credential. A Railway service key, provider API key or another app's token is not a substitute. There is no self-service credential-issuance endpoint. Follow the platform's [developer-access process at the frozen source](https://github.com/MultiAgency/platform/blob/2fedc80227b641cc7db48e079af2ed229a619d3f/docs/developer-access.md) before provisioning:
 
 1. Review a unique deployment ID, display name, responsible NEAR account and publisher website. IDs use lowercase letters, digits and dashes and have at most 32 characters; the operator reserves `multiagency-*` by manual review.
 2. Agree the proof domain and publish its HTTPS `/.well-known/multiagency.txt` with exactly `deployment=<reviewed-deployment-id> account=<responsible-NEAR-account>`. The current app does not serve this proof path, so plan proof hosting with the operator instead of assuming the new app hostname already supplies it.
@@ -60,7 +60,7 @@ An unauthenticated `401` at the capability endpoint demonstrates an authenticati
 
 ## Freeze and verify the package
 
-Keep `@multiagency/treasury-app-sdk` pinned to `file:vendor/multiagency-sdk-0.5.8.tgz`. The frozen unpublished artifact's SHA-256 is `cd3f9736f1e729e9ca98edf38bd64819ecbf955114ab0420e40b5c00462ec14b`. Its source commit and snapshot are recorded in the [consumer handoff](limit-orders-consumer.md#dependency-and-release-boundary). The legacy gateway consumer keeps `@multiagency/sdk` at `0.4.0`.
+Keep `@multiagency/treasury-app-sdk` pinned to `file:vendor/multiagency-sdk-0.5.8.tgz`. The frozen unpublished artifact's SHA-256 is `3c3b87d541ff479771dc3cda7a15609b103b8315e6c5fc07d5e88f189a1786b5`. Its source commit and snapshot are recorded in the [consumer handoff](limit-orders-consumer.md#dependency-and-release-boundary). The legacy gateway consumer keeps `@multiagency/sdk` at `0.4.0`.
 
 A registry alias is a later release decision, after publication and verification of the published package's provenance and contract. A matching version number alone is insufficient. Include the tarball, its checksum file, lockfile, app source, shared imports and deployment files in the frozen source package.
 
