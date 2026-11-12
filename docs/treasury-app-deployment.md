@@ -62,7 +62,7 @@ An unauthenticated `401` at the capability endpoint demonstrates an authenticati
 
 Keep `@multiagency/treasury-app-sdk` pinned to `file:vendor/multiagency-sdk-0.5.8.tgz`. The frozen vendored artifact's SHA-256 is `844fae568516dbc8d377d6f8dcceb8177be8a92c134db545d024ac25cf45d254`. Its source commit and snapshot are recorded in the [consumer handoff](limit-orders-consumer.md#dependency-and-release-boundary). The legacy gateway consumer keeps `@multiagency/sdk` at `0.4.0`.
 
-A registry alias is a later release decision, after publication and verification of the published package's provenance and contract. A matching version number alone is insufficient. Include the tarball, its checksum file, lockfile, app source, shared imports and deployment files in the frozen source package.
+The published SDK 0.5.8 tarball matched this vendored artifact byte for byte. A registry alias remains a separate, reviewed dependency change with consumer checks; the current file pin is portable. Include the tarball, its checksum file, lockfile, app source, shared imports and deployment files in the frozen source package.
 
 From that source package, prepare the local image and run the repository's release checks:
 

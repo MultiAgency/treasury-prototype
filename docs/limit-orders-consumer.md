@@ -1,10 +1,10 @@
 # Treasury app limit-order consumer
 
-Status: local consumer integration only, using the frozen SDK 0.5.8 candidate artifact. Package publication and deployed support are separate gates. No live order, provider mutation, deployment or live-service restart was performed. Offline and browser fixtures do not establish provider behavior.
+Status: local consumer integration only, using the frozen SDK 0.5.8 release artifact. The SDK package is published; compatible platform and provider deployment remain separate gates. No live order, provider mutation, deployment or live-service restart was performed. Offline and browser fixtures do not establish provider behavior.
 
 ## Dependency and release boundary
 
-The order app imports `@multiagency/treasury-app-sdk`, pinned to the portable repository artifact `file:vendor/multiagency-sdk-0.5.8.tgz`. Its verified SHA-256 is `844fae568516dbc8d377d6f8dcceb8177be8a92c134db545d024ac25cf45d254`. This source-frozen candidate replaces the earlier 0.5.8 consumer artifact. Its local release evidence does not establish a compatible deployed platform or provider.
+The order app imports `@multiagency/treasury-app-sdk`, pinned to the portable repository artifact `file:vendor/multiagency-sdk-0.5.8.tgz`. Its verified SHA-256 is `844fae568516dbc8d377d6f8dcceb8177be8a92c134db545d024ac25cf45d254`. An independent download of the [published SDK 0.5.8 package](https://www.npmjs.com/package/@multiagency/sdk/v/0.5.8) matched this tarball byte for byte. That release evidence does not establish a compatible deployed platform or provider.
 
 The tarball's `package/provenance.json` records:
 
@@ -12,21 +12,21 @@ The tarball's `package/provenance.json` records:
 - Source snapshot digest `6ce0914b10e83ffd74714b5356fee4d45699ce96f88cf96270bd524ca485f0fa`.
 - Empty `dirtyPaths` and `sourcesDirty`, with no overlay diff.
 
-The checksum was verified before use. The build-input regression pins the artifact checksum, checksum sidecar and embedded source provenance. These identify the tested consumer bytes; they do not establish a published package, a compatible deployed platform or live provider behavior.
+The checksum was verified before use. The build-input regression pins the artifact checksum, checksum sidecar and embedded source provenance. These identify the tested consumer bytes; the registry download confirms the same published bytes. Neither establishes a compatible deployed platform or live provider behavior.
 
-For this candidate build, keep the portable vendored dependency:
+For this app build, keep the portable vendored dependency:
 
 ```json
 "@multiagency/treasury-app-sdk": "file:vendor/multiagency-sdk-0.5.8.tgz"
 ```
 
-Do not switch this artifact to a registry alias before publication and provenance verification. After publication, compare the published package's provenance and contract against the reviewed frozen source, then propose an exact npm alias for that verified published version and regenerate the lockfile. A matching version number alone is insufficient. Keep the app alias until the legacy gateway consumer is migrated separately. The existing `@multiagency/sdk: "0.4.0"` remains for those consumers.
+The published package's bytes and provenance now match the reviewed frozen source. A registry alias remains a separate dependency change: propose an exact npm alias, regenerate the lockfile and repeat consumer checks before replacing this file pin. Keep the app alias until the legacy gateway consumer is migrated separately. The existing `@multiagency/sdk: "0.4.0"` remains for those consumers.
 
-The candidate contract omits legacy `Client.treasury.setConfidential` and `Client.steward.propose`, and its policy actions include `limit_order`, absent from this checkout's legacy provider `Policy` type. The alias confines this task to the app consumer without editing the SDK checkout or altering those existing flows. The frozen candidate rejects exponent-form prices through normal schema validation; malformed input is refused before a platform call.
+The 0.5.8 contract omits legacy `Client.treasury.setConfidential` and `Client.steward.propose`, and its policy actions include `limit_order`, absent from this checkout's legacy provider `Policy` type. The alias confines this task to the app consumer without editing the SDK checkout or altering those existing flows. The published artifact rejects exponent-form prices through normal schema validation; malformed input is refused before a platform call.
 
-## Current candidate contract comparison
+## Release artifact contract comparison
 
-Compared with the immediately prior 0.5.8 consumer artifact from `2fedc80`, packed `CHANGES.md`, `provenance.json` and two generated JavaScript bundles changed. The bundles differ only in build-path comments; their executable lines and the other 97 packed files, including the limit-order contracts, app client, consent and capability contracts, and SDK Treasury app skill, are byte-identical. The earlier optional `payment.repeats` addition on an owner `approval_vote` preparation remains unchanged. This Treasury consumer does not use that payment preparation path. Its order behavior is rechecked against the current candidate.
+Compared with the immediately prior 0.5.8 consumer artifact from `2fedc80`, packed `CHANGES.md`, `provenance.json` and two generated JavaScript bundles changed. The bundles differ only in build-path comments; their executable lines and the other 97 packed files, including the limit-order contracts, app client, consent and capability contracts, and SDK Treasury app skill, are byte-identical. The earlier optional `payment.repeats` addition on an owner `approval_vote` preparation remains unchanged. This Treasury consumer does not use that payment preparation path. Its order behavior was rechecked against the release artifact.
 
 ## Consent and operation behavior
 
@@ -52,7 +52,7 @@ For the dedicated app image, staging configuration, read-only platform preflight
 
 ## Remaining platform/provider gates
 
-- Verify SDK feature-release publication and provenance against the reviewed frozen source before proposing a registry alias. PR #78 is merged; release and verify a compatible platform before app rollout, including its deployed app capability endpoint and all order/DAO route contracts. The older 0.5.7 staging platform lacks this order route; an advertised capability alone proves neither the active agent release nor provider support.
+- The SDK 0.5.8 library is published with matching provenance; an exact registry alias still needs its own reviewed dependency change and consumer checks. Platform PRs #78 and #87 are merged, but verify a compatible deployed platform before app rollout, including its app capability endpoint and all order/DAO route contracts. The last checked 0.5.7 staging platform lacks this order route; an advertised capability alone proves neither the active agent release nor provider support.
 - Production provider order routes remain unverified and were absent in the supplied read-only platform observation. Live placement, cancellation, partial fills, final payout semantics, deduplication and provider policy enforcement remain unverified.
 - The owner must separately sign a policy revision enabling `limit_order` with its deviation bound, hold the required live Treasury grant, and satisfy platform policy/strategy checks. A configured cash floor currently refuses resting orders.
 - Preserve and reconcile platform order journals, one-way claims and DAO relay receipts for rollout/rollback; an older platform cannot be assumed to read new order journal methods.
